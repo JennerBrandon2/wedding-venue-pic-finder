@@ -23,44 +23,44 @@ const Index = () => {
 
       if (searchError) throw searchError;
 
-      // Then fetch all images associated with this search
-      const { data: imagesData, error: imagesError } = await supabase
-        .from('venue_images')
-        .select('*')
-        .eq('search_id', searchData.id);
-
-      if (imagesError) throw imagesError;
-
-      // For now, since we don't have real images yet, we'll insert some mock data
-      // TODO: Replace this with real image search API integration
-      const mockImages = Array.from({ length: 6 }, async (_, i) => {
-        const imageUrl = `https://source.unsplash.com/800x600/?wedding,venue&${i}`;
-        const altText = `Wedding Venue ${i + 1} for ${query}`;
-
-        const { data: imageData, error: imageError } = await supabase
-          .from('venue_images')
-          .insert([{
-            search_id: searchData.id,
-            image_url: imageUrl,
-            alt_text: altText
-          }])
-          .select()
-          .single();
-
-        if (imageError) throw imageError;
-        return {
-          id: imageData.id,
-          url: imageData.image_url,
-          alt: imageData.alt_text
-        };
+      // Call our Edge Function to generate an image
+      const response = await fetch('https://lvxhaolstwcsmrnkdruj.supabase.co/functions/v1/search-venues', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ venue_name: query })
       });
 
-      const savedImages = await Promise.all(mockImages);
-      setImages(savedImages);
+      if (!response.ok) {
+        throw new Error('Failed to generate venue image');
+      }
+
+      const { image_url, alt_text } = await response.json();
+
+      // Save the generated image to our database
+      const { data: imageData, error: imageError } = await supabase
+        .from('venue_images')
+        .insert([{
+          search_id: searchData.id,
+          image_url,
+          alt_text
+        }])
+        .select()
+        .single();
+
+      if (imageError) throw imageError;
+
+      setImages([{
+        id: imageData.id,
+        url: imageData.image_url,
+        alt: imageData.alt_text
+      }]);
       
       toast({
         title: "Search completed",
-        description: `Found ${savedImages.length} images for "${query}"`,
+        description: `Generated a beautiful image for "${query}"`,
       });
     } catch (error) {
       console.error('Search error:', error);
