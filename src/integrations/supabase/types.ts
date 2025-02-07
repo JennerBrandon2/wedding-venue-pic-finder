@@ -9,6 +9,27 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      venue_csv_imports: {
+        Row: {
+          created_at: string
+          filename: string
+          id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          filename: string
+          id?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          filename?: string
+          id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       venue_images: {
         Row: {
           alt_text: string
@@ -34,6 +55,51 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "venue_images_search_id_fkey"
+            columns: ["search_id"]
+            isOneToOne: false
+            referencedRelation: "venue_searches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      venue_import_items: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          import_id: string
+          search_id: string | null
+          status: string
+          venue_name: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          import_id: string
+          search_id?: string | null
+          status?: string
+          venue_name: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          import_id?: string
+          search_id?: string | null
+          status?: string
+          venue_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "venue_import_items_import_id_fkey"
+            columns: ["import_id"]
+            isOneToOne: false
+            referencedRelation: "venue_csv_imports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "venue_import_items_search_id_fkey"
             columns: ["search_id"]
             isOneToOne: false
             referencedRelation: "venue_searches"
