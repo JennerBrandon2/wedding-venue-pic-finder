@@ -81,9 +81,9 @@ export function VenueImportResults() {
                 <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
                 <TableCell>{item.error_message || '-'}</TableCell>
               </TableRow>
-            </TableBody>
-          </Table>
-        </div>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
