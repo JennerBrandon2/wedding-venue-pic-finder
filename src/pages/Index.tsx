@@ -4,7 +4,8 @@ import { SearchVenue } from "@/components/SearchVenue";
 import { VenueImageGrid } from "@/components/VenueImageGrid";
 import { VenueBatchUpload } from "@/components/VenueBatchUpload";
 import { VenueImportResults } from "@/components/VenueImportResults";
-import { useToast } from "@/components/ui/use-toast";
+import { PastSearches } from "@/components/PastSearches";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
 
@@ -90,6 +91,8 @@ const Index = () => {
       </div>
       
       <VenueImageGrid images={images} isLoading={isLoading} />
+      
+      <PastSearches />
       
       <div className="border-t mt-12 pt-8">
         <h2 className="text-3xl font-serif font-semibold text-center mb-6">

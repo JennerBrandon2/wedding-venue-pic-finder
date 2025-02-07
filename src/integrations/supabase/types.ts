@@ -110,16 +110,19 @@ export type Database = {
       venue_searches: {
         Row: {
           created_at: string
+          download_count: number | null
           id: string
           venue_name: string
         }
         Insert: {
           created_at?: string
+          download_count?: number | null
           id?: string
           venue_name: string
         }
         Update: {
           created_at?: string
+          download_count?: number | null
           id?: string
           venue_name?: string
         }
