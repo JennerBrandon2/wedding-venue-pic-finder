@@ -30,30 +30,34 @@ const Index = () => {
 
       if (functionError) throw functionError;
 
-      const { image_url, alt_text } = data;
+      // Save all generated images to our database and prepare them for display
+      const newImages: VenueImage[] = [];
+      
+      for (const imageResult of data.images) {
+        const { data: imageData, error: imageError } = await supabase
+          .from('venue_images')
+          .insert([{
+            search_id: searchData.id,
+            image_url: imageResult.image_url,
+            alt_text: imageResult.alt_text
+          }])
+          .select()
+          .single();
 
-      // Save the generated image to our database
-      const { data: imageData, error: imageError } = await supabase
-        .from('venue_images')
-        .insert([{
-          search_id: searchData.id,
-          image_url,
-          alt_text
-        }])
-        .select()
-        .single();
+        if (imageError) throw imageError;
 
-      if (imageError) throw imageError;
+        newImages.push({
+          id: imageData.id,
+          url: imageData.image_url,
+          alt: imageData.alt_text
+        });
+      }
 
-      setImages([{
-        id: imageData.id,
-        url: imageData.image_url,
-        alt: imageData.alt_text
-      }]);
+      setImages(newImages);
       
       toast({
         title: "Search completed",
-        description: `Generated a beautiful image for "${query}"`,
+        description: `Found ${newImages.length} beautiful images for "${query}"`,
       });
     } catch (error) {
       console.error('Search error:', error);

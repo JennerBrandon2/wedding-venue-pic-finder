@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     
     // Call SerpAPI to search for venue images
     const searchQuery = `${venue_name} wedding venue`;
-    const response = await fetch(`https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}`);
+    const response = await fetch(`https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`);
     
     if (!response.ok) {
       throw new Error('Failed to fetch images from SerpAPI');
@@ -22,16 +22,13 @@ Deno.serve(async (req) => {
 
     const data = await response.json();
     
-    // Get the first image result
-    const firstImage = data.images_results?.[0];
-    if (!firstImage) {
-      throw new Error('No images found');
-    }
+    // Get the first 15 image results
+    const images = data.images_results?.slice(0, 15).map((img: any) => ({
+      image_url: img.original || img.thumbnail,
+      alt_text: img.title || `Wedding venue ${venue_name}`
+    })) || [];
 
-    return new Response(JSON.stringify({
-      image_url: firstImage.original || firstImage.thumbnail,
-      alt_text: firstImage.title || `Wedding venue ${venue_name}`
-    }), {
+    return new Response(JSON.stringify({ images }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
