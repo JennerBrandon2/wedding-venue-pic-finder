@@ -30,6 +30,16 @@ const Index = () => {
 
       if (functionError) throw functionError;
 
+      if (!data?.images || !Array.isArray(data.images)) {
+        toast({
+          title: "No images found",
+          description: `Couldn't find any images for "${query}"`,
+          variant: "destructive",
+        });
+        setImages([]);
+        return;
+      }
+
       // Save all generated images to our database and prepare them for display
       const newImages: VenueImage[] = [];
       

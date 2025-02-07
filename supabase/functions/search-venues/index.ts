@@ -21,12 +21,20 @@ Deno.serve(async (req) => {
     }
 
     const data = await response.json();
+    console.log('SerpAPI response:', data); // Added for debugging
+
+    if (!data.images_results || !Array.isArray(data.images_results)) {
+      console.error('No images found or invalid response format:', data);
+      return new Response(JSON.stringify({ images: [] }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     // Get the first 15 image results
-    const images = data.images_results?.slice(0, 15).map((img: any) => ({
+    const images = data.images_results.slice(0, 15).map((img: any) => ({
       image_url: img.original || img.thumbnail,
       alt_text: img.title || `Wedding venue ${venue_name}`
-    })) || [];
+    }));
 
     return new Response(JSON.stringify({ images }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
