@@ -23,21 +23,14 @@ const Index = () => {
 
       if (searchError) throw searchError;
 
-      // Call our Edge Function to generate an image
-      const response = await fetch('https://lvxhaolstwcsmrnkdruj.supabase.co/functions/v1/search-venues', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ venue_name: query })
+      // Call our Edge Function using Supabase's function invocation
+      const { data, error: functionError } = await supabase.functions.invoke('search-venues', {
+        body: { venue_name: query }
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to generate venue image');
-      }
+      if (functionError) throw functionError;
 
-      const { image_url, alt_text } = await response.json();
+      const { image_url, alt_text } = data;
 
       // Save the generated image to our database
       const { data: imageData, error: imageError } = await supabase
