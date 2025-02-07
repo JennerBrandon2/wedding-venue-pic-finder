@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 // Temporary mock data until we integrate with real API
 const mockImages = Array.from({ length: 15 }, (_, i) => ({
   id: `img-${i}`,
-  url: `https://source.unsplash.com/random/800x600?wedding,venue&sig=${i}`,
+  url: `https://source.unsplash.com/800x600/?wedding,venue&${i}`,
   alt: `Wedding Venue ${i + 1}`,
 }));
 
@@ -41,7 +41,7 @@ const Index = () => {
 
   return (
     <main className="min-h-screen py-8 px-4">
-      <div className="search-container">
+      <div className="max-w-3xl mx-auto">
         <SearchVenue onSearch={handleSearch} />
       </div>
       

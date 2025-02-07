@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface VenueImage {
   id: string;
@@ -18,9 +18,9 @@ export function VenueImageGrid({ images, isLoading }: Props) {
 
   if (isLoading) {
     return (
-      <div className="image-grid animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-8 animate-fade-in">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="loading-skeleton aspect-[3/2]" />
+          <div key={i} className="aspect-[3/2] bg-gray-200 rounded-lg animate-pulse" />
         ))}
       </div>
     );
@@ -28,17 +28,17 @@ export function VenueImageGrid({ images, isLoading }: Props) {
 
   return (
     <>
-      <div className="image-grid animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-8 animate-fade-in">
         {images.map((image) => (
           <div
             key={image.id}
-            className="image-card cursor-pointer"
+            className="aspect-[3/2] rounded-lg overflow-hidden cursor-pointer shadow-sm hover:shadow-md transition-all duration-300"
             onClick={() => setSelectedImage(image)}
           >
             <img
               src={image.url}
               alt={image.alt}
-              className="transition-transform duration-300 hover:scale-105"
+              className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
               loading="lazy"
             />
           </div>
@@ -47,6 +47,9 @@ export function VenueImageGrid({ images, isLoading }: Props) {
 
       <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
         <DialogContent className="max-w-4xl">
+          <DialogTitle className="sr-only">
+            {selectedImage?.alt || "Venue Image"}
+          </DialogTitle>
           {selectedImage && (
             <img
               src={selectedImage.url}
