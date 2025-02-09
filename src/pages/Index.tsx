@@ -9,23 +9,22 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
 
+interface HotelDetails {
+  description: string;
+  room_count: number | null;
+  hotel_id: string | null;
+}
+
 const Index = () => {
   const [images, setImages] = useState<VenueImage[]>([]);
+  const [hotelDetails, setHotelDetails] = useState<HotelDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   const handleSearch = async (query: string) => {
     setIsLoading(true);
+    setHotelDetails(null);
     try {
-      // First, create a new search record
-      const { data: searchData, error: searchError } = await supabase
-        .from('venue_searches')
-        .insert([{ venue_name: query }])
-        .select()
-        .single();
-
-      if (searchError) throw searchError;
-
       // Call our Edge Function using Supabase's function invocation
       const { data, error: functionError } = await supabase.functions.invoke('search-venues', {
         body: { venue_name: query }
@@ -43,30 +42,19 @@ const Index = () => {
         return;
       }
 
-      // Save all generated images to our database and prepare them for display
-      const newImages: VenueImage[] = [];
-      
-      for (const imageResult of data.images) {
-        const { data: imageData, error: imageError } = await supabase
-          .from('venue_images')
-          .insert([{
-            search_id: searchData.id,
-            image_url: imageResult.image_url,
-            alt_text: imageResult.alt_text
-          }])
-          .select()
-          .single();
-
-        if (imageError) throw imageError;
-
-        newImages.push({
-          id: imageData.id,
-          url: imageData.image_url,
-          alt: imageData.alt_text
-        });
-      }
+      // Format images for display
+      const newImages: VenueImage[] = data.images.map((img: any) => ({
+        id: crypto.randomUUID(),
+        url: img.image_url,
+        alt: img.alt_text
+      }));
 
       setImages(newImages);
+      
+      // Set hotel details if available
+      if (data.hotelDetails) {
+        setHotelDetails(data.hotelDetails);
+      }
       
       toast({
         title: "Search completed",
@@ -88,6 +76,20 @@ const Index = () => {
     <main className="min-h-screen py-8 px-4">
       <div className="max-w-3xl mx-auto">
         <SearchVenue onSearch={handleSearch} />
+        
+        {hotelDetails && (
+          <div className="mt-8 p-6 bg-white rounded-lg shadow-sm border">
+            <h3 className="text-xl font-semibold mb-4">Venue Details</h3>
+            {hotelDetails.description && (
+              <p className="text-gray-700 mb-4">{hotelDetails.description}</p>
+            )}
+            {hotelDetails.room_count && (
+              <p className="text-sm text-gray-600">
+                Number of rooms: {hotelDetails.room_count}
+              </p>
+            )}
+          </div>
+        )}
       </div>
       
       <VenueImageGrid images={images} isLoading={isLoading} />

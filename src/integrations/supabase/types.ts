@@ -110,20 +110,32 @@ export type Database = {
       venue_searches: {
         Row: {
           created_at: string
+          description: string | null
           download_count: number | null
+          hotel_details: Json | null
+          hotel_id: string | null
           id: string
+          room_count: number | null
           venue_name: string
         }
         Insert: {
           created_at?: string
+          description?: string | null
           download_count?: number | null
+          hotel_details?: Json | null
+          hotel_id?: string | null
           id?: string
+          room_count?: number | null
           venue_name: string
         }
         Update: {
           created_at?: string
+          description?: string | null
           download_count?: number | null
+          hotel_details?: Json | null
+          hotel_id?: string | null
           id?: string
+          room_count?: number | null
           venue_name?: string
         }
         Relationships: []

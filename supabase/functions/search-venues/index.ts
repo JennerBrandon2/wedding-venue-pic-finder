@@ -26,11 +26,47 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', venue_item_id);
     }
+
+    // First, search for hotel details
+    const hotelSearchQuery = `${venue_name} hotel details`;
+    const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
     
-    // Create search record
+    if (!hotelResponse.ok) {
+      throw new Error('Failed to fetch hotel details from SerpAPI');
+    }
+
+    const hotelData = await hotelResponse.json();
+    
+    // Extract hotel details from the search results
+    const hotelDetails = {
+      description: '',
+      room_count: null,
+      hotel_id: null
+    };
+
+    if (hotelData.knowledge_graph) {
+      hotelDetails.description = hotelData.knowledge_graph.description || '';
+      
+      // Try to extract room count from description or additional details
+      const roomMatch = hotelDetails.description.match(/(\d+)\s+rooms?/i);
+      if (roomMatch) {
+        hotelDetails.room_count = parseInt(roomMatch[1]);
+      }
+      
+      // Use a unique identifier from the knowledge graph as hotel_id
+      hotelDetails.hotel_id = hotelData.knowledge_graph.gid || null;
+    }
+    
+    // Create search record with hotel details
     const { data: searchData, error: searchError } = await supabase
       .from('venue_searches')
-      .insert([{ venue_name }])
+      .insert([{ 
+        venue_name,
+        description: hotelDetails.description,
+        room_count: hotelDetails.room_count,
+        hotel_id: hotelDetails.hotel_id,
+        hotel_details: hotelData.knowledge_graph || {}
+      }])
       .select()
       .single();
 
@@ -99,7 +135,14 @@ Deno.serve(async (req) => {
       await processNextVenue(import_id);
     }
 
-    return new Response(JSON.stringify({ images }), {
+    return new Response(JSON.stringify({ 
+      images,
+      hotelDetails: {
+        description: hotelDetails.description,
+        room_count: hotelDetails.room_count,
+        hotel_id: hotelDetails.hotel_id
+      }
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
