@@ -83,7 +83,7 @@ const Index = () => {
             {hotelDetails.description && (
               <p className="text-gray-700 mb-4">{hotelDetails.description}</p>
             )}
-            {hotelDetails.room_count && (
+            {hotelDetails.room_count !== null && (
               <p className="text-sm text-gray-600">
                 Number of rooms: {hotelDetails.room_count}
               </p>
