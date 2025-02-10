@@ -1,4 +1,3 @@
-
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -27,15 +26,16 @@ Deno.serve(async (req) => {
         .eq('id', venue_item_id);
     }
 
-    // First, search for hotel details
-    const hotelSearchQuery = `${venue_name} hotel amenities facilities`;
-    const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
+    // First, search for hotel details using the hotels endpoint
+    const hotelSearchQuery = `${venue_name}`;
+    const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google_hotels&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
     
     if (!hotelResponse.ok) {
       throw new Error('Failed to fetch hotel details from SerpAPI');
     }
 
     const hotelData = await hotelResponse.json();
+    console.log('Hotel API response:', hotelData);
     
     // Extract hotel details from the search results
     const hotelDetails = {
@@ -48,59 +48,35 @@ Deno.serve(async (req) => {
       amenities: [] as string[]
     };
 
-    if (hotelData.knowledge_graph) {
-      const kg = hotelData.knowledge_graph;
-      hotelDetails.description = kg.description || '';
+    if (hotelData.properties && hotelData.properties.length > 0) {
+      const hotel = hotelData.properties[0];
       
-      // Try to extract room count from description or additional details
-      const roomMatch = hotelDetails.description.match(/(\d+)\s+rooms?/i);
-      if (roomMatch) {
-        hotelDetails.room_count = parseInt(roomMatch[1]);
-      }
+      hotelDetails.description = hotel.description || '';
+      hotelDetails.hotel_id = hotel.property_id || null;
+      hotelDetails.website = hotel.website || '';
+      hotelDetails.address = hotel.address || '';
       
-      // Use a unique identifier from the knowledge graph as hotel_id
-      hotelDetails.hotel_id = kg.gid || null;
-
-      // Extract website
-      hotelDetails.website = kg.website || '';
-
-      // Extract address
-      hotelDetails.address = kg.address || '';
-
       // Extract contact details
       hotelDetails.contact_details = {
-        phone: kg.phone || '',
-        reservations: kg.reservations || '',
+        phone: hotel.phone_number || '',
+        reservations: hotel.booking_info?.url || '',
         social_media: {
-          facebook: kg.facebook?.url || '',
-          twitter: kg.twitter?.url || '',
-          instagram: kg.instagram?.url || ''
+          facebook: hotel.social_links?.facebook || '',
+          twitter: hotel.social_links?.twitter || '',
+          instagram: hotel.social_links?.instagram || ''
         }
       };
 
-      // Extract amenities from description and knowledge graph
-      const amenityKeywords = [
-        'Wi-Fi', 'Pool', 'Spa', 'Gym', 'Restaurant', 'Bar', 'Room Service',
-        'Beach Access', 'Parking', 'Fitness Center', 'Business Center',
-        'Conference Room', 'Wedding Venue', 'Aquarium', 'Water Park',
-        'Kids Club', 'Butler Service', 'Hot Tub', 'Private Beach'
-      ];
-      
-      // Search for amenities in the description
-      const combinedText = (kg.description || '') + ' ' + (kg.amenities || '');
-      hotelDetails.amenities = amenityKeywords.filter(amenity => 
-        new RegExp(amenity, 'i').test(combinedText)
-      );
+      // Extract amenities directly from the hotel data
+      if (hotel.amenities && Array.isArray(hotel.amenities)) {
+        hotelDetails.amenities = hotel.amenities.map((amenity: any) => 
+          typeof amenity === 'string' ? amenity : amenity.name || amenity.toString()
+        );
+      }
 
-      // Add explicitly mentioned amenities
-      if (kg.amenities) {
-        const explicitAmenities = Array.isArray(kg.amenities) 
-          ? kg.amenities 
-          : typeof kg.amenities === 'string' 
-            ? kg.amenities.split(',').map((a: string) => a.trim())
-            : [];
-        
-        hotelDetails.amenities = [...new Set([...hotelDetails.amenities, ...explicitAmenities])];
+      // If room count is available
+      if (hotel.rooms_data && hotel.rooms_data.total_rooms) {
+        hotelDetails.room_count = parseInt(hotel.rooms_data.total_rooms);
       }
     }
     
@@ -112,7 +88,7 @@ Deno.serve(async (req) => {
         description: hotelDetails.description,
         room_count: hotelDetails.room_count,
         hotel_id: hotelDetails.hotel_id,
-        hotel_details: hotelData.knowledge_graph || {},
+        hotel_details: hotelData.properties?.[0] || {},
         website: hotelDetails.website,
         address: hotelDetails.address,
         contact_details: hotelDetails.contact_details,
