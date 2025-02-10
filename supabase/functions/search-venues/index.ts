@@ -44,7 +44,8 @@ Deno.serve(async (req) => {
       hotel_id: null,
       website: '',
       address: '',
-      contact_details: {}
+      contact_details: {},
+      amenities: [] as string[]
     };
 
     if (hotelData.knowledge_graph) {
@@ -76,6 +77,15 @@ Deno.serve(async (req) => {
           instagram: kg.instagram?.url || ''
         }
       };
+
+      // Extract amenities from the knowledge graph
+      if (kg.amenities) {
+        hotelDetails.amenities = Array.isArray(kg.amenities) 
+          ? kg.amenities 
+          : typeof kg.amenities === 'string' 
+            ? kg.amenities.split(',').map((a: string) => a.trim())
+            : [];
+      }
     }
     
     // Create search record with hotel details
@@ -89,7 +99,8 @@ Deno.serve(async (req) => {
         hotel_details: hotelData.knowledge_graph || {},
         website: hotelDetails.website,
         address: hotelDetails.address,
-        contact_details: hotelDetails.contact_details
+        contact_details: hotelDetails.contact_details,
+        amenities: hotelDetails.amenities
       }])
       .select()
       .single();
@@ -167,7 +178,8 @@ Deno.serve(async (req) => {
         hotel_id: hotelDetails.hotel_id,
         website: hotelDetails.website,
         address: hotelDetails.address,
-        contact_details: hotelDetails.contact_details
+        contact_details: hotelDetails.contact_details,
+        amenities: hotelDetails.amenities
       }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

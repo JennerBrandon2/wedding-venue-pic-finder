@@ -8,7 +8,7 @@ import { PastSearches } from "@/components/PastSearches";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
-import { ExternalLink, Phone, Mail } from "lucide-react";
+import { ExternalLink, Phone, Mail, Check } from "lucide-react";
 
 interface HotelDetails {
   description: string;
@@ -16,6 +16,7 @@ interface HotelDetails {
   hotel_id: string | null;
   website: string;
   address: string;
+  amenities: string[];
   contact_details: {
     phone?: string;
     reservations?: string;
@@ -167,6 +168,20 @@ const Index = () => {
                     })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {hotelDetails.amenities && hotelDetails.amenities.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-lg font-semibold mb-2">Amenities</h4>
+                <ul className="grid grid-cols-2 gap-2">
+                  {hotelDetails.amenities.map((amenity, index) => (
+                    <li key={index} className="flex items-center gap-2 text-sm text-gray-600">
+                      <Check className="h-4 w-4 text-green-500" />
+                      {amenity}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>

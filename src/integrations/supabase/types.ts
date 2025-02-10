@@ -110,6 +110,7 @@ export type Database = {
       venue_searches: {
         Row: {
           address: string | null
+          amenities: string[] | null
           contact_details: Json | null
           created_at: string
           description: string | null
@@ -123,6 +124,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          amenities?: string[] | null
           contact_details?: Json | null
           created_at?: string
           description?: string | null
@@ -136,6 +138,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          amenities?: string[] | null
           contact_details?: Json | null
           created_at?: string
           description?: string | null
