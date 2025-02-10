@@ -109,6 +109,8 @@ export type Database = {
       }
       venue_searches: {
         Row: {
+          address: string | null
+          contact_details: Json | null
           created_at: string
           description: string | null
           download_count: number | null
@@ -117,8 +119,11 @@ export type Database = {
           id: string
           room_count: number | null
           venue_name: string
+          website: string | null
         }
         Insert: {
+          address?: string | null
+          contact_details?: Json | null
           created_at?: string
           description?: string | null
           download_count?: number | null
@@ -127,8 +132,11 @@ export type Database = {
           id?: string
           room_count?: number | null
           venue_name: string
+          website?: string | null
         }
         Update: {
+          address?: string | null
+          contact_details?: Json | null
           created_at?: string
           description?: string | null
           download_count?: number | null
@@ -137,6 +145,7 @@ export type Database = {
           id?: string
           room_count?: number | null
           venue_name?: string
+          website?: string | null
         }
         Relationships: []
       }

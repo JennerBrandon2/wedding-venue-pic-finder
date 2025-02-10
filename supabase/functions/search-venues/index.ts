@@ -41,11 +41,15 @@ Deno.serve(async (req) => {
     const hotelDetails = {
       description: '',
       room_count: null,
-      hotel_id: null
+      hotel_id: null,
+      website: '',
+      address: '',
+      contact_details: {}
     };
 
     if (hotelData.knowledge_graph) {
-      hotelDetails.description = hotelData.knowledge_graph.description || '';
+      const kg = hotelData.knowledge_graph;
+      hotelDetails.description = kg.description || '';
       
       // Try to extract room count from description or additional details
       const roomMatch = hotelDetails.description.match(/(\d+)\s+rooms?/i);
@@ -54,7 +58,24 @@ Deno.serve(async (req) => {
       }
       
       // Use a unique identifier from the knowledge graph as hotel_id
-      hotelDetails.hotel_id = hotelData.knowledge_graph.gid || null;
+      hotelDetails.hotel_id = kg.gid || null;
+
+      // Extract website
+      hotelDetails.website = kg.website || '';
+
+      // Extract address
+      hotelDetails.address = kg.address || '';
+
+      // Extract contact details
+      hotelDetails.contact_details = {
+        phone: kg.phone || '',
+        reservations: kg.reservations || '',
+        social_media: {
+          facebook: kg.facebook?.url || '',
+          twitter: kg.twitter?.url || '',
+          instagram: kg.instagram?.url || ''
+        }
+      };
     }
     
     // Create search record with hotel details
@@ -65,7 +86,10 @@ Deno.serve(async (req) => {
         description: hotelDetails.description,
         room_count: hotelDetails.room_count,
         hotel_id: hotelDetails.hotel_id,
-        hotel_details: hotelData.knowledge_graph || {}
+        hotel_details: hotelData.knowledge_graph || {},
+        website: hotelDetails.website,
+        address: hotelDetails.address,
+        contact_details: hotelDetails.contact_details
       }])
       .select()
       .single();
@@ -140,7 +164,10 @@ Deno.serve(async (req) => {
       hotelDetails: {
         description: hotelDetails.description,
         room_count: hotelDetails.room_count,
-        hotel_id: hotelDetails.hotel_id
+        hotel_id: hotelDetails.hotel_id,
+        website: hotelDetails.website,
+        address: hotelDetails.address,
+        contact_details: hotelDetails.contact_details
       }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

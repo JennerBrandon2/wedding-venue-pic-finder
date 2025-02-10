@@ -8,11 +8,23 @@ import { PastSearches } from "@/components/PastSearches";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
+import { ExternalLink, Phone, Mail } from "lucide-react";
 
 interface HotelDetails {
   description: string;
   room_count: number | null;
   hotel_id: string | null;
+  website: string;
+  address: string;
+  contact_details: {
+    phone?: string;
+    reservations?: string;
+    social_media?: {
+      facebook?: string;
+      twitter?: string;
+      instagram?: string;
+    };
+  };
 }
 
 const Index = () => {
@@ -78,15 +90,84 @@ const Index = () => {
         <SearchVenue onSearch={handleSearch} />
         
         {hotelDetails && (
-          <div className="mt-8 p-6 bg-white rounded-lg shadow-sm border">
+          <div className="mt-8 p-6 bg-white rounded-lg shadow-sm border space-y-4">
             <h3 className="text-xl font-semibold mb-4">Venue Details</h3>
+            
             {hotelDetails.description && (
               <p className="text-gray-700 mb-4">{hotelDetails.description}</p>
             )}
+            
             {hotelDetails.room_count !== null && (
               <p className="text-sm text-gray-600">
                 Number of rooms: {hotelDetails.room_count}
               </p>
+            )}
+
+            {hotelDetails.website && (
+              <div className="flex items-center gap-2 text-sm">
+                <ExternalLink className="h-4 w-4" />
+                <a 
+                  href={hotelDetails.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  Visit Website
+                </a>
+              </div>
+            )}
+
+            {hotelDetails.address && (
+              <div className="text-sm text-gray-600">
+                <strong>Address:</strong> {hotelDetails.address}
+              </div>
+            )}
+
+            {hotelDetails.contact_details && (
+              <div className="space-y-2">
+                {hotelDetails.contact_details.phone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone className="h-4 w-4" />
+                    <a 
+                      href={`tel:${hotelDetails.contact_details.phone}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {hotelDetails.contact_details.phone}
+                    </a>
+                  </div>
+                )}
+
+                {hotelDetails.contact_details.reservations && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mail className="h-4 w-4" />
+                    <a 
+                      href={`mailto:${hotelDetails.contact_details.reservations}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {hotelDetails.contact_details.reservations}
+                    </a>
+                  </div>
+                )}
+
+                {hotelDetails.contact_details.social_media && (
+                  <div className="flex gap-4 text-sm">
+                    {Object.entries(hotelDetails.contact_details.social_media).map(([platform, url]) => {
+                      if (!url) return null;
+                      return (
+                        <a
+                          key={platform}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="capitalize text-blue-600 hover:underline"
+                        >
+                          {platform}
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
