@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     }
 
     // First, search for hotel details
-    const hotelSearchQuery = `${venue_name} hotel details`;
+    const hotelSearchQuery = `${venue_name} hotel amenities facilities`;
     const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
     
     if (!hotelResponse.ok) {
@@ -78,13 +78,29 @@ Deno.serve(async (req) => {
         }
       };
 
-      // Extract amenities from the knowledge graph
+      // Extract amenities from description and knowledge graph
+      const amenityKeywords = [
+        'Wi-Fi', 'Pool', 'Spa', 'Gym', 'Restaurant', 'Bar', 'Room Service',
+        'Beach Access', 'Parking', 'Fitness Center', 'Business Center',
+        'Conference Room', 'Wedding Venue', 'Aquarium', 'Water Park',
+        'Kids Club', 'Butler Service', 'Hot Tub', 'Private Beach'
+      ];
+      
+      // Search for amenities in the description
+      const combinedText = (kg.description || '') + ' ' + (kg.amenities || '');
+      hotelDetails.amenities = amenityKeywords.filter(amenity => 
+        new RegExp(amenity, 'i').test(combinedText)
+      );
+
+      // Add explicitly mentioned amenities
       if (kg.amenities) {
-        hotelDetails.amenities = Array.isArray(kg.amenities) 
+        const explicitAmenities = Array.isArray(kg.amenities) 
           ? kg.amenities 
           : typeof kg.amenities === 'string' 
             ? kg.amenities.split(',').map((a: string) => a.trim())
             : [];
+        
+        hotelDetails.amenities = [...new Set([...hotelDetails.amenities, ...explicitAmenities])];
       }
     }
     
