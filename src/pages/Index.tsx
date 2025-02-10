@@ -45,6 +45,8 @@ const Index = () => {
 
       if (functionError) throw functionError;
 
+      console.log('Search response:', data); // Add logging to see the full response
+
       if (!data?.images || !Array.isArray(data.images)) {
         toast({
           title: "No images found",
@@ -66,6 +68,8 @@ const Index = () => {
       
       // Set hotel details if available
       if (data.hotelDetails) {
+        console.log('Hotel details:', data.hotelDetails); // Add logging for hotel details
+        console.log('Amenities:', data.hotelDetails.amenities); // Specifically log amenities
         setHotelDetails(data.hotelDetails);
       }
       
