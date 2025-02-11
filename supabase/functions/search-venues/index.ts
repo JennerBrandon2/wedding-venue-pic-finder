@@ -1,4 +1,3 @@
-
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -24,12 +23,38 @@ interface HotelDetails {
 async function fetchHotelData(venueName: string): Promise<any> {
   console.log('Fetching hotel data for:', venueName);
   
+  // Get tomorrow's date for check_in_date parameter
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const checkInDate = tomorrow.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  
+  // Get date 3 days after for check_out_date
+  const checkOutDate = new Date(tomorrow);
+  checkOutDate.setDate(checkOutDate.getDate() + 3);
+  const checkOutDateStr = checkOutDate.toISOString().split('T')[0];
+  
   // Properly format and encode the search query
   const searchQuery = `${venueName} hotel`;
   const encodedQuery = encodeURIComponent(searchQuery);
-  const url = `https://serpapi.com/search.json?engine=google_hotels&q=${encodedQuery}&api_key=${apiKey}`;
+  
+  const queryParams = new URLSearchParams({
+    engine: 'google_hotels',
+    q: searchQuery,
+    api_key: apiKey,
+    check_in_date: checkInDate,
+    check_out_date: checkOutDateStr,
+    adults: '2', // Default value
+    currency: 'USD'
+  });
+  
+  const url = `https://serpapi.com/search.json?${queryParams.toString()}`;
   
   console.log('Fetching from URL:', url.replace(apiKey, 'REDACTED'));
+  console.log('Search parameters:', {
+    checkInDate,
+    checkOutDate: checkOutDateStr,
+    query: searchQuery
+  });
   
   try {
     const response = await fetch(url, {
