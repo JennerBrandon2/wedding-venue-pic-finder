@@ -1,3 +1,4 @@
+
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -72,10 +73,7 @@ async function fetchHotelData(venueName: string): Promise<any> {
     }
 
     const data = await response.json();
-    console.log('Hotel API response received:', {
-      hasProperties: !!data.properties,
-      propertyCount: data.properties?.length || 0
-    });
+    console.log('Hotel API response:', data); // Log full response for debugging
     return data;
   } catch (error) {
     console.error('Error in fetchHotelData:', error);
@@ -121,10 +119,7 @@ async function fetchVenueImages(venueName: string): Promise<any> {
 }
 
 function extractHotelDetails(hotelData: any): HotelDetails {
-  console.log('Extracting hotel details from data:', {
-    hasProperties: !!hotelData.properties,
-    firstProperty: hotelData.properties?.[0] ? 'exists' : 'missing'
-  });
+  console.log('Raw hotel data:', hotelData); // Add detailed logging
   
   const hotelDetails: HotelDetails = {
     description: '',
@@ -136,17 +131,17 @@ function extractHotelDetails(hotelData: any): HotelDetails {
     amenities: []
   };
 
-  if (hotelData.properties?.[0]) {
-    const hotel = hotelData.properties[0];
+  if (hotelData.hotels_results?.[0]) {
+    const hotel = hotelData.hotels_results[0];
     
-    hotelDetails.description = hotel.description || '';
-    hotelDetails.hotel_id = hotel.property_id || null;
-    hotelDetails.website = hotel.website || '';
+    hotelDetails.description = hotel.description || hotel.snippet || '';
+    hotelDetails.hotel_id = hotel.hotel_id || null;
+    hotelDetails.website = hotel.website || hotel.booking_info?.link || '';
     hotelDetails.address = hotel.address || '';
     
     hotelDetails.contact_details = {
       phone: hotel.phone_number || '',
-      reservations: hotel.booking_info?.url || '',
+      reservations: hotel.booking_info?.link || '',
       social_media: {
         facebook: hotel.social_links?.facebook || '',
         twitter: hotel.social_links?.twitter || '',
@@ -154,11 +149,17 @@ function extractHotelDetails(hotelData: any): HotelDetails {
       }
     };
 
-    if (hotel.amenities_list && Array.isArray(hotel.amenities_list)) {
-      hotelDetails.amenities = hotel.amenities_list.map((amenity: any) => 
-        typeof amenity === 'string' ? amenity : amenity.name || amenity.toString()
-      );
-    }
+    // Extract amenities from different possible locations in the API response
+    const amenitiesList = hotel.amenities || 
+                         hotel.property_amenities || 
+                         hotel.facility_highlights || 
+                         [];
+                         
+    hotelDetails.amenities = Array.isArray(amenitiesList) ? 
+      amenitiesList.map((amenity: any) => 
+        typeof amenity === 'string' ? amenity : 
+        amenity.name || amenity.amenity || amenity.toString()
+      ) : [];
 
     if (hotel.rooms_data?.total_rooms) {
       hotelDetails.room_count = parseInt(hotel.rooms_data.total_rooms);
@@ -168,7 +169,8 @@ function extractHotelDetails(hotelData: any): HotelDetails {
       hasDescription: !!hotelDetails.description,
       hasWebsite: !!hotelDetails.website,
       hasAddress: !!hotelDetails.address,
-      amenityCount: hotelDetails.amenities.length
+      amenityCount: hotelDetails.amenities.length,
+      details: hotelDetails // Log the full extracted details
     });
   }
 
