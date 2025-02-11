@@ -1,3 +1,4 @@
+
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -11,12 +12,25 @@ if (!supabaseUrl || !supabaseServiceKey) throw new Error('Supabase credentials r
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 Deno.serve(async (req) => {
+  // Always handle CORS preflight requests first
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { venue_name, import_id, venue_item_id } = await req.json();
+    // Parse request body
+    const body = await req.json().catch(() => null);
+    if (!body || !body.venue_name) {
+      return new Response(
+        JSON.stringify({ error: 'venue_name is required' }), 
+        { 
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    const { venue_name, import_id, venue_item_id } = body;
     
     // Update status to processing if this is part of a batch import
     if (import_id && venue_item_id) {
@@ -28,10 +42,13 @@ Deno.serve(async (req) => {
 
     // First, search for hotel details using the hotels endpoint
     const hotelSearchQuery = `${venue_name}`;
-    const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google_hotels&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
+    const hotelResponse = await fetch(
+      `https://serpapi.com/search.json?engine=google_hotels&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
     
     if (!hotelResponse.ok) {
-      throw new Error('Failed to fetch hotel details from SerpAPI');
+      throw new Error(`Failed to fetch hotel details from SerpAPI: ${hotelResponse.statusText}`);
     }
 
     const hotelData = await hotelResponse.json();
@@ -101,10 +118,13 @@ Deno.serve(async (req) => {
 
     // Call SerpAPI to search for venue images
     const searchQuery = `${venue_name} wedding venue`;
-    const response = await fetch(`https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`);
+    const response = await fetch(
+      `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
     
     if (!response.ok) {
-      throw new Error('Failed to fetch images from SerpAPI');
+      throw new Error(`Failed to fetch images from SerpAPI: ${response.statusText}`);
     }
 
     const data = await response.json();
@@ -126,9 +146,15 @@ Deno.serve(async (req) => {
         await processNextVenue(import_id);
       }
 
-      return new Response(JSON.stringify({ images: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ 
+          images: [],
+          hotelDetails
+        }), 
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
     }
     
     // Get the first 15 image results
@@ -162,43 +188,51 @@ Deno.serve(async (req) => {
       await processNextVenue(import_id);
     }
 
-    return new Response(JSON.stringify({ 
-      images,
-      hotelDetails: {
-        description: hotelDetails.description,
-        room_count: hotelDetails.room_count,
-        hotel_id: hotelDetails.hotel_id,
-        website: hotelDetails.website,
-        address: hotelDetails.address,
-        contact_details: hotelDetails.contact_details,
-        amenities: hotelDetails.amenities
+    return new Response(
+      JSON.stringify({ 
+        images,
+        hotelDetails
+      }), 
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    );
 
   } catch (error) {
     console.error('Search venues error:', error);
 
+    // Try to get request body for error handling
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      body = {};
+    }
+
     // If this is part of a batch import, update error status and process next venue
-    const { import_id, venue_item_id } = await req.json();
-    if (import_id && venue_item_id) {
+    if (body.import_id && body.venue_item_id) {
       await supabase
         .from('venue_import_items')
         .update({ 
           status: 'error',
           error_message: error.message
         })
-        .eq('id', venue_item_id);
+        .eq('id', body.venue_item_id);
 
       // Process next venue
-      await processNextVenue(import_id);
+      await processNextVenue(body.import_id);
     }
 
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ 
+        error: error.message,
+        details: error.stack
+      }), 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      }
+    );
   }
 });
 
