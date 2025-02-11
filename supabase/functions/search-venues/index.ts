@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
     }
 
     const { venue_name, import_id, venue_item_id } = body;
+    console.log('Searching for venue:', venue_name);
     
     // Update status to processing if this is part of a batch import
     if (import_id && venue_item_id) {
@@ -42,6 +43,7 @@ Deno.serve(async (req) => {
 
     // First, search for hotel details using the hotels endpoint
     const hotelSearchQuery = `${venue_name}`;
+    console.log('Making hotel search request to SerpAPI...');
     const hotelResponse = await fetch(
       `https://serpapi.com/search.json?engine=google_hotels&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`,
       { headers: { 'Content-Type': 'application/json' } }
@@ -52,7 +54,7 @@ Deno.serve(async (req) => {
     }
 
     const hotelData = await hotelResponse.json();
-    console.log('Hotel API response:', hotelData);
+    console.log('Hotel API response:', JSON.stringify(hotelData, null, 2));
     
     // Extract hotel details from the search results
     const hotelDetails = {
@@ -84,9 +86,9 @@ Deno.serve(async (req) => {
         }
       };
 
-      // Extract amenities directly from the hotel data
-      if (hotel.amenities && Array.isArray(hotel.amenities)) {
-        hotelDetails.amenities = hotel.amenities.map((amenity: any) => 
+      // Extract amenities from the hotel data
+      if (hotel.amenities_list && Array.isArray(hotel.amenities_list)) {
+        hotelDetails.amenities = hotel.amenities_list.map((amenity: any) => 
           typeof amenity === 'string' ? amenity : amenity.name || amenity.toString()
         );
       }
@@ -98,6 +100,7 @@ Deno.serve(async (req) => {
     }
     
     // Create search record with hotel details
+    console.log('Saving search record to database...');
     const { data: searchData, error: searchError } = await supabase
       .from('venue_searches')
       .insert([{ 
@@ -117,6 +120,7 @@ Deno.serve(async (req) => {
     if (searchError) throw searchError;
 
     // Call SerpAPI to search for venue images
+    console.log('Making image search request to SerpAPI...');
     const searchQuery = `${venue_name} wedding venue`;
     const response = await fetch(
       `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`,
@@ -128,6 +132,7 @@ Deno.serve(async (req) => {
     }
 
     const data = await response.json();
+    console.log('Image search API response received');
 
     if (!data.images_results || !Array.isArray(data.images_results)) {
       console.error('No images found or invalid response format:', data);
@@ -163,6 +168,8 @@ Deno.serve(async (req) => {
       alt_text: img.title || `Wedding venue ${venue_name}`
     }));
 
+    console.log(`Found ${images.length} images`);
+
     // Save images
     for (const imageResult of images) {
       await supabase
@@ -187,6 +194,8 @@ Deno.serve(async (req) => {
       // Process next venue
       await processNextVenue(import_id);
     }
+
+    console.log('Successfully completed venue search');
 
     return new Response(
       JSON.stringify({ 
