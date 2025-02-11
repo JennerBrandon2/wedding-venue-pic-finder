@@ -119,7 +119,7 @@ async function fetchVenueImages(venueName: string): Promise<any> {
 }
 
 function extractHotelDetails(hotelData: any): HotelDetails {
-  console.log('Raw hotel data:', hotelData); // Add detailed logging
+  console.log('Raw hotel data:', hotelData);
   
   const hotelDetails: HotelDetails = {
     description: '',
@@ -134,14 +134,26 @@ function extractHotelDetails(hotelData: any): HotelDetails {
   if (hotelData.hotels_results?.[0]) {
     const hotel = hotelData.hotels_results[0];
     
-    hotelDetails.description = hotel.description || hotel.snippet || '';
-    hotelDetails.hotel_id = hotel.hotel_id || null;
-    hotelDetails.website = hotel.website || hotel.booking_info?.link || '';
-    hotelDetails.address = hotel.address || '';
+    // Extract description from various possible fields
+    hotelDetails.description = hotel.snippet || 
+                              hotel.description || 
+                              hotel.overview || 
+                              hotel.about || 
+                              '';
+                              
+    hotelDetails.hotel_id = hotel.hotel_id || hotel.id || null;
+    hotelDetails.website = hotel.website || 
+                          hotel.booking_info?.link || 
+                          hotel.business_listing?.link || 
+                          '';
+                          
+    hotelDetails.address = hotel.address || hotel.location || '';
     
+    // Enhanced contact details extraction
     hotelDetails.contact_details = {
-      phone: hotel.phone_number || '',
-      reservations: hotel.booking_info?.link || '',
+      phone: hotel.phone_number || hotel.contact?.phone || '',
+      reservations: hotel.booking_info?.link || hotel.reservations_link || '',
+      email: hotel.email || hotel.contact?.email || '',
       social_media: {
         facebook: hotel.social_links?.facebook || '',
         twitter: hotel.social_links?.twitter || '',
@@ -149,36 +161,59 @@ function extractHotelDetails(hotelData: any): HotelDetails {
       }
     };
 
-    // Extract amenities from different possible locations in the API response
-    const amenitiesList = hotel.amenities || 
-                         hotel.property_amenities || 
-                         hotel.facility_highlights || 
-                         [];
-                         
-    hotelDetails.amenities = Array.isArray(amenitiesList) ? 
-      amenitiesList.map((amenity: any) => 
-        typeof amenity === 'string' ? amenity : 
-        amenity.name || amenity.amenity || amenity.toString()
-      ) : [];
+    // Extract amenities from all possible locations
+    const amenitiesSources = [
+      hotel.amenities,
+      hotel.property_amenities,
+      hotel.facility_highlights,
+      hotel.facilities,
+      hotel.features
+    ].filter(Boolean);
 
-    if (hotel.rooms_data?.total_rooms) {
-      hotelDetails.room_count = parseInt(hotel.rooms_data.total_rooms);
+    const allAmenities = new Set<string>();
+    
+    amenitiesSources.forEach(source => {
+      if (Array.isArray(source)) {
+        source.forEach(amenity => {
+          const amenityText = typeof amenity === 'string' ? 
+            amenity : 
+            amenity.name || 
+            amenity.amenity || 
+            amenity.title ||
+            amenity.toString();
+          allAmenities.add(amenityText.trim());
+        });
+      }
+    });
+
+    hotelDetails.amenities = Array.from(allAmenities);
+
+    if (hotel.rooms_data?.total_rooms || hotel.room_count) {
+      hotelDetails.room_count = parseInt(hotel.rooms_data?.total_rooms || hotel.room_count);
     }
     
     console.log('Extracted hotel details:', {
       hasDescription: !!hotelDetails.description,
+      descriptionLength: hotelDetails.description.length,
       hasWebsite: !!hotelDetails.website,
       hasAddress: !!hotelDetails.address,
       amenityCount: hotelDetails.amenities.length,
-      details: hotelDetails // Log the full extracted details
+      details: hotelDetails
     });
+  } else {
+    console.warn('No hotel results found in the API response');
   }
 
   return hotelDetails;
 }
 
 async function saveSearchRecord(venueName: string, hotelDetails: HotelDetails, hotelData: any) {
-  console.log('Saving search record');
+  console.log('Saving search record with details:', {
+    venueName,
+    hotelDetails,
+    hasHotelData: !!hotelData
+  });
+
   const { data, error } = await supabase
     .from('venue_searches')
     .insert([{
@@ -186,7 +221,7 @@ async function saveSearchRecord(venueName: string, hotelDetails: HotelDetails, h
       description: hotelDetails.description,
       room_count: hotelDetails.room_count,
       hotel_id: hotelDetails.hotel_id,
-      hotel_details: hotelData.properties?.[0] || {},
+      hotel_details: hotelData.hotels_results?.[0] || {},
       website: hotelDetails.website,
       address: hotelDetails.address,
       contact_details: hotelDetails.contact_details,
@@ -200,6 +235,7 @@ async function saveSearchRecord(venueName: string, hotelDetails: HotelDetails, h
     throw error;
   }
 
+  console.log('Successfully saved search record:', data);
   return data;
 }
 
