@@ -23,42 +23,84 @@ interface HotelDetails {
 
 async function fetchHotelData(venueName: string): Promise<any> {
   console.log('Fetching hotel data for:', venueName);
-  const hotelSearchQuery = `${venueName}`;
-  const response = await fetch(
-    `https://serpapi.com/search.json?engine=google_hotels&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`,
-    { headers: { 'Content-Type': 'application/json' } }
-  );
   
-  if (!response.ok) {
-    console.error('Hotel API error:', response.status, response.statusText);
-    throw new Error(`Hotel API error: ${response.status} ${response.statusText}`);
-  }
+  // Properly format and encode the search query
+  const searchQuery = `${venueName} hotel`;
+  const encodedQuery = encodeURIComponent(searchQuery);
+  const url = `https://serpapi.com/search.json?engine=google_hotels&q=${encodedQuery}&api_key=${apiKey}`;
+  
+  console.log('Fetching from URL:', url.replace(apiKey, 'REDACTED'));
+  
+  try {
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' }
+    });
 
-  const data = await response.json();
-  console.log('Hotel API response received');
-  return data;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Hotel API error details:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`Hotel API error: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Hotel API response received:', {
+      hasProperties: !!data.properties,
+      propertyCount: data.properties?.length || 0
+    });
+    return data;
+  } catch (error) {
+    console.error('Error in fetchHotelData:', error);
+    throw error;
+  }
 }
 
 async function fetchVenueImages(venueName: string): Promise<any> {
   console.log('Fetching images for:', venueName);
-  const searchQuery = `${venueName} wedding venue`;
-  const response = await fetch(
-    `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`,
-    { headers: { 'Content-Type': 'application/json' } }
-  );
   
-  if (!response.ok) {
-    console.error('Image API error:', response.status, response.statusText);
-    throw new Error(`Image API error: ${response.status} ${response.statusText}`);
-  }
+  // Properly format and encode the search query
+  const searchQuery = `${venueName} wedding venue`;
+  const encodedQuery = encodeURIComponent(searchQuery);
+  const url = `https://serpapi.com/search.json?engine=google_images&q=${encodedQuery}&api_key=${apiKey}&num=15`;
+  
+  console.log('Fetching from URL:', url.replace(apiKey, 'REDACTED'));
+  
+  try {
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' }
+    });
 
-  const data = await response.json();
-  console.log('Image API response received');
-  return data;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Image API error details:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`Image API error: ${response.status} ${response.statusText}\nDetails: ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('Image API response received:', {
+      hasResults: !!data.images_results,
+      resultCount: data.images_results?.length || 0
+    });
+    return data;
+  } catch (error) {
+    console.error('Error in fetchVenueImages:', error);
+    throw error;
+  }
 }
 
 function extractHotelDetails(hotelData: any): HotelDetails {
-  console.log('Extracting hotel details');
+  console.log('Extracting hotel details from data:', {
+    hasProperties: !!hotelData.properties,
+    firstProperty: hotelData.properties?.[0] ? 'exists' : 'missing'
+  });
+  
   const hotelDetails: HotelDetails = {
     description: '',
     room_count: null,
@@ -96,6 +138,13 @@ function extractHotelDetails(hotelData: any): HotelDetails {
     if (hotel.rooms_data?.total_rooms) {
       hotelDetails.room_count = parseInt(hotel.rooms_data.total_rooms);
     }
+    
+    console.log('Extracted hotel details:', {
+      hasDescription: !!hotelDetails.description,
+      hasWebsite: !!hotelDetails.website,
+      hasAddress: !!hotelDetails.address,
+      amenityCount: hotelDetails.amenities.length
+    });
   }
 
   return hotelDetails;
@@ -211,10 +260,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json().catch(() => null);
+    const body = await req.json().catch(() => {
+      console.error('Failed to parse request body');
+      throw new Error('Invalid JSON in request body');
+    });
+    
     console.log('Request body:', body);
 
     if (!body?.venue_name) {
+      console.error('Missing venue_name in request');
       throw new Error('venue_name is required');
     }
 
@@ -224,28 +278,40 @@ Deno.serve(async (req) => {
     await updateImportStatus(import_id, venue_item_id, 'processing');
 
     // Fetch hotel data
+    console.log('Starting venue search process for:', venue_name);
     const hotelData = await fetchHotelData(venue_name);
     const hotelDetails = extractHotelDetails(hotelData);
 
     // Save search record
+    console.log('Saving search record for:', venue_name);
     const searchRecord = await saveSearchRecord(venue_name, hotelDetails, hotelData);
 
     // Fetch and save images
+    console.log('Fetching and saving images for:', venue_name);
     const imagesData = await fetchVenueImages(venue_name);
     const images = await saveVenueImages(searchRecord.id, imagesData);
 
     // Update import status if this is part of a batch
     await updateImportStatus(import_id, venue_item_id, 'completed', undefined, searchRecord.id);
 
-    console.log('Successfully completed venue search');
+    console.log('Successfully completed venue search for:', venue_name);
 
     return new Response(
-      JSON.stringify({ images, hotelDetails }),
+      JSON.stringify({ 
+        success: true,
+        images, 
+        hotelDetails,
+        message: 'Venue search completed successfully'
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Search venues error:', error);
+    console.error('Search venues error:', {
+      message: error.message,
+      stack: error.stack,
+      cause: error.cause
+    });
     
     let body;
     try {
@@ -259,6 +325,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ 
+        success: false,
         error: error.message,
         details: error.stack
       }), 
