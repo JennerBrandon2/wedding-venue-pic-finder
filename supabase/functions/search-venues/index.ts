@@ -1,4 +1,3 @@
-
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -27,15 +26,13 @@ async function fetchHotelData(venueName: string): Promise<any> {
   // Get tomorrow's date for check_in_date parameter
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const checkInDate = tomorrow.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+  const checkInDate = tomorrow.toISOString().split('T')[0];
   
-  // Get date 3 days after for check_out_date
   const checkOutDate = new Date(tomorrow);
   checkOutDate.setDate(checkOutDate.getDate() + 3);
   const checkOutDateStr = checkOutDate.toISOString().split('T')[0];
   
-  // Properly format and encode the search query
-  const searchQuery = `${venueName} hotel`;
+  const searchQuery = `${venueName} hotel venue`;
   const encodedQuery = encodeURIComponent(searchQuery);
   
   const queryParams = new URLSearchParams({
@@ -44,27 +41,19 @@ async function fetchHotelData(venueName: string): Promise<any> {
     api_key: apiKey,
     check_in_date: checkInDate,
     check_out_date: checkOutDateStr,
-    adults: '2', // Default value
-    currency: 'USD'
+    adults: '2',
+    currency: 'USD',
+    hl: 'en'
   });
   
   const url = `https://serpapi.com/search.json?${queryParams.toString()}`;
   
-  console.log('Fetching from URL:', url.replace(apiKey, 'REDACTED'));
-  console.log('Search parameters:', {
-    checkInDate,
-    checkOutDate: checkOutDateStr,
-    query: searchQuery
-  });
-  
   try {
-    const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    const response = await fetch(url);
+    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Hotel API error details:', {
+      console.error('Hotel API error:', {
         status: response.status,
         statusText: response.statusText,
         error: errorText
@@ -73,7 +62,7 @@ async function fetchHotelData(venueName: string): Promise<any> {
     }
 
     const data = await response.json();
-    console.log('Hotel API response:', data); // Log full response for debugging
+    console.log('Raw API response:', JSON.stringify(data, null, 2));
     return data;
   } catch (error) {
     console.error('Error in fetchHotelData:', error);
@@ -84,12 +73,9 @@ async function fetchHotelData(venueName: string): Promise<any> {
 async function fetchVenueImages(venueName: string): Promise<any> {
   console.log('Fetching images for:', venueName);
   
-  // Properly format and encode the search query
   const searchQuery = `${venueName} wedding venue`;
   const encodedQuery = encodeURIComponent(searchQuery);
   const url = `https://serpapi.com/search.json?engine=google_images&q=${encodedQuery}&api_key=${apiKey}&num=15`;
-  
-  console.log('Fetching from URL:', url.replace(apiKey, 'REDACTED'));
   
   try {
     const response = await fetch(url, {
@@ -119,8 +105,8 @@ async function fetchVenueImages(venueName: string): Promise<any> {
 }
 
 function extractHotelDetails(hotelData: any): HotelDetails {
-  console.log('Raw hotel data:', hotelData);
-  
+  console.log('Extracting hotel details from:', JSON.stringify(hotelData, null, 2));
+
   const hotelDetails: HotelDetails = {
     description: '',
     room_count: null,
@@ -131,112 +117,145 @@ function extractHotelDetails(hotelData: any): HotelDetails {
     amenities: []
   };
 
-  if (hotelData.hotels_results?.[0]) {
-    const hotel = hotelData.hotels_results[0];
-    
-    // Extract description from various possible fields
-    hotelDetails.description = hotel.snippet || 
-                              hotel.description || 
-                              hotel.overview || 
-                              hotel.about || 
-                              '';
-                              
-    hotelDetails.hotel_id = hotel.hotel_id || hotel.id || null;
-    hotelDetails.website = hotel.website || 
-                          hotel.booking_info?.link || 
-                          hotel.business_listing?.link || 
-                          '';
-                          
-    hotelDetails.address = hotel.address || hotel.location || '';
-    
-    // Enhanced contact details extraction
-    hotelDetails.contact_details = {
-      phone: hotel.phone_number || hotel.contact?.phone || '',
-      reservations: hotel.booking_info?.link || hotel.reservations_link || '',
-      email: hotel.email || hotel.contact?.email || '',
-      social_media: {
-        facebook: hotel.social_links?.facebook || '',
-        twitter: hotel.social_links?.twitter || '',
-        instagram: hotel.social_links?.instagram || ''
-      }
-    };
-
-    // Extract amenities from all possible locations
-    const amenitiesSources = [
-      hotel.amenities,
-      hotel.property_amenities,
-      hotel.facility_highlights,
-      hotel.facilities,
-      hotel.features
-    ].filter(Boolean);
-
-    const allAmenities = new Set<string>();
-    
-    amenitiesSources.forEach(source => {
-      if (Array.isArray(source)) {
-        source.forEach(amenity => {
-          const amenityText = typeof amenity === 'string' ? 
-            amenity : 
-            amenity.name || 
-            amenity.amenity || 
-            amenity.title ||
-            amenity.toString();
-          allAmenities.add(amenityText.trim());
-        });
-      }
-    });
-
-    hotelDetails.amenities = Array.from(allAmenities);
-
-    if (hotel.rooms_data?.total_rooms || hotel.room_count) {
-      hotelDetails.room_count = parseInt(hotel.rooms_data?.total_rooms || hotel.room_count);
-    }
-    
-    console.log('Extracted hotel details:', {
-      hasDescription: !!hotelDetails.description,
-      descriptionLength: hotelDetails.description.length,
-      hasWebsite: !!hotelDetails.website,
-      hasAddress: !!hotelDetails.address,
-      amenityCount: hotelDetails.amenities.length,
-      details: hotelDetails
-    });
-  } else {
-    console.warn('No hotel results found in the API response');
+  if (!hotelData.hotels_results?.[0]) {
+    console.warn('No hotel results found in API response');
+    return hotelDetails;
   }
+
+  const hotel = hotelData.hotels_results[0];
+  console.log('Processing hotel data:', JSON.stringify(hotel, null, 2));
+
+  // Description
+  const descriptionSources = [
+    hotel.description,
+    hotel.snippet,
+    hotel.overview,
+    hotel.about,
+    hotel.summary
+  ];
+  hotelDetails.description = descriptionSources.find(source => source && typeof source === 'string') || '';
+
+  // Basic details
+  hotelDetails.hotel_id = hotel.hotel_id || hotel.id || hotel.place_id || null;
+  hotelDetails.website = hotel.website || 
+                        hotel.booking_url || 
+                        (hotel.booking_info && hotel.booking_info.link) || 
+                        (hotel.business_info && hotel.business_info.site) || 
+                        '';
+  
+  hotelDetails.address = hotel.address || 
+                        hotel.location || 
+                        (hotel.address_info && hotel.address_info.full_address) || 
+                        '';
+
+  // Room count
+  const roomCount = hotel.rooms_data?.total_rooms || 
+                   hotel.room_count || 
+                   (hotel.property_info && hotel.property_info.room_count);
+  if (roomCount) {
+    hotelDetails.room_count = parseInt(roomCount.toString(), 10);
+  }
+
+  // Contact details
+  hotelDetails.contact_details = {
+    phone: hotel.phone_number || 
+           hotel.phone || 
+           (hotel.contact && hotel.contact.phone) || 
+           '',
+    reservations: hotel.reservations_phone || 
+                 (hotel.booking_info && hotel.booking_info.link) || 
+                 '',
+    email: hotel.email || 
+           (hotel.contact && hotel.contact.email) || 
+           '',
+    social_media: {
+      facebook: (hotel.social_links && hotel.social_links.facebook) || '',
+      twitter: (hotel.social_links && hotel.social_links.twitter) || '',
+      instagram: (hotel.social_links && hotel.social_links.instagram) || ''
+    }
+  };
+
+  // Amenities
+  const amenitySources = [
+    hotel.amenities,
+    hotel.property_amenities,
+    hotel.facility_highlights,
+    hotel.facilities,
+    hotel.features,
+    hotel.highlights
+  ].filter(Boolean);
+
+  const allAmenities = new Set<string>();
+  
+  amenitySources.forEach(source => {
+    if (Array.isArray(source)) {
+      source.forEach(amenity => {
+        let amenityText = '';
+        if (typeof amenity === 'string') {
+          amenityText = amenity;
+        } else if (typeof amenity === 'object' && amenity !== null) {
+          amenityText = amenity.name || 
+                       amenity.amenity || 
+                       amenity.title || 
+                       amenity.text || 
+                       amenity.label || 
+                       '';
+        }
+        if (amenityText.trim()) {
+          allAmenities.add(amenityText.trim());
+        }
+      });
+    }
+  });
+
+  hotelDetails.amenities = Array.from(allAmenities);
+
+  // Log the extracted details for debugging
+  console.log('Extracted hotel details:', {
+    hasDescription: !!hotelDetails.description,
+    descriptionLength: hotelDetails.description.length,
+    hasWebsite: !!hotelDetails.website,
+    hasAddress: !!hotelDetails.address,
+    amenityCount: hotelDetails.amenities.length,
+    contactDetails: hotelDetails.contact_details,
+    fullDetails: hotelDetails
+  });
 
   return hotelDetails;
 }
 
 async function saveSearchRecord(venueName: string, hotelDetails: HotelDetails, hotelData: any) {
-  console.log('Saving search record with details:', {
-    venueName,
-    hotelDetails,
-    hasHotelData: !!hotelData
-  });
+  console.log('Saving search record for:', venueName);
+  console.log('Hotel details to save:', JSON.stringify(hotelDetails, null, 2));
 
-  const { data, error } = await supabase
-    .from('venue_searches')
-    .insert([{
-      venue_name: venueName,
-      description: hotelDetails.description,
-      room_count: hotelDetails.room_count,
-      hotel_id: hotelDetails.hotel_id,
-      hotel_details: hotelData.hotels_results?.[0] || {},
-      website: hotelDetails.website,
-      address: hotelDetails.address,
-      contact_details: hotelDetails.contact_details,
-      amenities: hotelDetails.amenities
-    }])
-    .select()
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('venue_searches')
+      .insert([{
+        venue_name: venueName,
+        description: hotelDetails.description,
+        room_count: hotelDetails.room_count,
+        hotel_id: hotelDetails.hotel_id,
+        hotel_details: hotelData.hotels_results?.[0] || {},
+        website: hotelDetails.website,
+        address: hotelDetails.address,
+        contact_details: hotelDetails.contact_details,
+        amenities: hotelDetails.amenities
+      }])
+      .select()
+      .single();
 
-  if (error) {
-    console.error('Error saving search record:', error);
+    if (error) {
+      console.error('Error saving search record:', error);
+      throw error;
+    }
+
+    console.log('Successfully saved search record:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in saveSearchRecord:', error);
     throw error;
   }
-
-  console.log('Successfully saved search record:', data);
-  return data;
 }
 
 async function saveVenueImages(searchId: string, imagesData: any) {
