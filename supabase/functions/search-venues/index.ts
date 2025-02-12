@@ -58,16 +58,9 @@ Deno.serve(async (req) => {
         hotelDetails.room_count = parseInt(roomMatch[1]);
       }
       
-      // Use a unique identifier from the knowledge graph as hotel_id
       hotelDetails.hotel_id = kg.gid || null;
-
-      // Extract website
       hotelDetails.website = kg.website || '';
-
-      // Extract address
       hotelDetails.address = kg.address || '';
-
-      // Extract contact details
       hotelDetails.contact_details = {
         phone: kg.phone || '',
         reservations: kg.reservations || '',
@@ -78,7 +71,6 @@ Deno.serve(async (req) => {
         }
       };
 
-      // Extract amenities from the knowledge graph
       if (kg.amenities) {
         hotelDetails.amenities = Array.isArray(kg.amenities) 
           ? kg.amenities 
@@ -139,22 +131,25 @@ Deno.serve(async (req) => {
       });
     }
     
-    // Get the first 15 image results
+    // Get the first 15 image results and include venue_name
     const images = data.images_results.slice(0, 15).map((img: any) => ({
       image_url: img.original || img.thumbnail,
-      alt_text: img.title || `Wedding venue ${venue_name}`
+      alt_text: img.title || `Wedding venue ${venue_name}`,
+      venue_name: venue_name // Include venue_name for each image
     }));
 
-    // Save images
-    for (const imageResult of images) {
-      await supabase
-        .from('venue_images')
-        .insert([{
-          search_id: searchData.id,
-          image_url: imageResult.image_url,
-          alt_text: imageResult.alt_text
-        }]);
-    }
+    // Save images with venue_name
+    const { data: savedImages, error: imageError } = await supabase
+      .from('venue_images')
+      .insert(images.map(img => ({
+        search_id: searchData.id,
+        image_url: img.image_url,
+        alt_text: img.alt_text,
+        venue_name: venue_name // Save venue_name with each image
+      })))
+      .select();
+
+    if (imageError) throw imageError;
 
     // If this is part of a batch import, update status and process next venue
     if (import_id && venue_item_id) {
@@ -171,16 +166,8 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify({ 
-      images,
-      hotelDetails: {
-        description: hotelDetails.description,
-        room_count: hotelDetails.room_count,
-        hotel_id: hotelDetails.hotel_id,
-        website: hotelDetails.website,
-        address: hotelDetails.address,
-        contact_details: hotelDetails.contact_details,
-        amenities: hotelDetails.amenities
-      }
+      images: savedImages,
+      hotelDetails
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

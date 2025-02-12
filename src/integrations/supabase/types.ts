@@ -37,6 +37,7 @@ export type Database = {
           id: string
           image_url: string
           search_id: string | null
+          venue_name: string
         }
         Insert: {
           alt_text: string
@@ -44,6 +45,7 @@ export type Database = {
           id?: string
           image_url: string
           search_id?: string | null
+          venue_name: string
         }
         Update: {
           alt_text?: string
@@ -51,6 +53,7 @@ export type Database = {
           id?: string
           image_url?: string
           search_id?: string | null
+          venue_name?: string
         }
         Relationships: [
           {
