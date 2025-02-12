@@ -79,10 +79,24 @@ export function VenueImportResults() {
         }
       }
 
-      // Create CSV content
-      const csvRows = [['Venue Name', 'Image URLs']];
+      // Find the maximum number of URLs for any venue
+      const maxUrls = Math.max(...results.map(r => r.urls.length));
+      
+      // Create headers: Venue Name + URL columns
+      const headers = ['Venue Name'];
+      for (let i = 1; i <= maxUrls; i++) {
+        headers.push(`Image URL ${i}`);
+      }
+
+      // Create CSV content with each URL in its own column
+      const csvRows = [headers];
       results.forEach(result => {
-        csvRows.push([result.venue_name, result.urls.join(', ')]);
+        const row = [result.venue_name];
+        // Add each URL to its own column, pad with empty strings if needed
+        for (let i = 0; i < maxUrls; i++) {
+          row.push(result.urls[i] || '');
+        }
+        csvRows.push(row);
       });
 
       const csvContent = csvRows
