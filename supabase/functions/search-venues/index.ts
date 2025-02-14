@@ -1,5 +1,6 @@
+
 import { corsHeaders } from '../_shared/cors.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.0';
 
 const apiKey = Deno.env.get('SERPAPI_API_KEY');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -11,20 +12,29 @@ if (!supabaseUrl || !supabaseServiceKey) throw new Error('Supabase credentials r
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 Deno.serve(async (req) => {
+  // Always handle CORS preflight requests first
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { venue_name, import_id, venue_item_id, search_type = 'venue' } = await req.json();
+    // Parse request body once at the start
+    const requestData = await req.json();
+    const { venue_name, import_id, venue_item_id, search_type = 'venue' } = requestData;
     const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
+    
+    if (!venue_name) {
+      throw new Error('venue_name is required');
+    }
     
     // Update status to processing if this is part of a batch import
     if (import_id && venue_item_id) {
-      await supabase
+      const { error: updateError } = await supabase
         .from('venue_import_items')
         .update({ status: 'processing' })
         .eq('id', venue_item_id);
+
+      if (updateError) throw updateError;
     }
 
     // First, search for hotel details
@@ -178,53 +188,47 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Search venues error:', error);
 
-    // If this is part of a batch import, update error status and process next venue
-    const { import_id, venue_item_id } = await req.json();
-    if (import_id && venue_item_id) {
-      await supabase
-        .from('venue_import_items')
-        .update({ 
-          status: 'error',
-          error_message: error.message
-        })
-        .eq('id', venue_item_id);
-
-      // Process next venue
-      await processNextVenue(import_id);
-    }
-
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        error: error.message || 'An unexpected error occurred'
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   }
 });
 
 async function processNextVenue(importId: string) {
-  // Find next pending venue
-  const { data: nextVenue } = await supabase
-    .from('venue_import_items')
-    .select()
-    .eq('import_id', importId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .single();
+  try {
+    // Find next pending venue
+    const { data: nextVenue } = await supabase
+      .from('venue_import_items')
+      .select()
+      .eq('import_id', importId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
 
-  if (nextVenue) {
-    // Process next venue
-    await supabase.functions.invoke('search-venues', {
-      body: { 
-        venue_name: nextVenue.venue_name,
-        import_id: importId,
-        venue_item_id: nextVenue.id
-      }
-    });
-  } else {
-    // All venues processed, update import status
-    await supabase
-      .from('venue_csv_imports')
-      .update({ status: 'completed' })
-      .eq('id', importId);
+    if (nextVenue) {
+      // Process next venue
+      await supabase.functions.invoke('search-venues', {
+        body: { 
+          venue_name: nextVenue.venue_name,
+          import_id: importId,
+          venue_item_id: nextVenue.id
+        }
+      });
+    } else {
+      // All venues processed, update import status
+      await supabase
+        .from('venue_csv_imports')
+        .update({ status: 'completed' })
+        .eq('id', importId);
+    }
+  } catch (error) {
+    console.error('Process next venue error:', error);
   }
 }
