@@ -122,6 +122,7 @@ export type Database = {
           hotel_id: string | null
           id: string
           room_count: number | null
+          search_type: string
           venue_name: string
           website: string | null
         }
@@ -136,6 +137,7 @@ export type Database = {
           hotel_id?: string | null
           id?: string
           room_count?: number | null
+          search_type?: string
           venue_name: string
           website?: string | null
         }
@@ -150,6 +152,7 @@ export type Database = {
           hotel_id?: string | null
           id?: string
           room_count?: number | null
+          search_type?: string
           venue_name?: string
           website?: string | null
         }
