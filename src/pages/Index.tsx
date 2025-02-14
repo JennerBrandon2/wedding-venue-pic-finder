@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { SearchVenue } from "@/components/SearchVenue";
 import { VenueImageGrid } from "@/components/VenueImageGrid";
@@ -9,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
 import { ExternalLink, Phone, Mail, Check } from "lucide-react";
+import { useSearch } from "@/contexts/SearchContext";
 
 interface HotelDetails {
   description: string;
@@ -33,14 +33,17 @@ const Index = () => {
   const [hotelDetails, setHotelDetails] = useState<HotelDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const { searchType } = useSearch();
 
   const handleSearch = async (query: string) => {
     setIsLoading(true);
     setHotelDetails(null);
     try {
-      // Call our Edge Function using Supabase's function invocation
       const { data, error: functionError } = await supabase.functions.invoke('search-venues', {
-        body: { venue_name: query }
+        body: { 
+          venue_name: query,
+          search_type: searchType
+        }
       });
 
       if (functionError) throw functionError;

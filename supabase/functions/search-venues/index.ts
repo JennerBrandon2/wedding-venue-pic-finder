@@ -1,4 +1,3 @@
-
 import { corsHeaders } from '../_shared/cors.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
@@ -17,7 +16,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { venue_name, import_id, venue_item_id } = await req.json();
+    const { venue_name, import_id, venue_item_id, search_type = 'venue' } = await req.json();
+    const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
     
     // Update status to processing if this is part of a batch import
     if (import_id && venue_item_id) {
@@ -92,7 +92,8 @@ Deno.serve(async (req) => {
         website: hotelDetails.website,
         address: hotelDetails.address,
         contact_details: hotelDetails.contact_details,
-        amenities: hotelDetails.amenities
+        amenities: hotelDetails.amenities,
+        search_type
       }])
       .select()
       .single();
@@ -100,7 +101,7 @@ Deno.serve(async (req) => {
     if (searchError) throw searchError;
 
     // Call SerpAPI to search for venue images with wide aspect ratio
-    const searchQuery = `${venue_name} wedding venue`;
+    const searchQuery = `${venue_name} ${searchSuffix}`;
     const response = await fetch(
       `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15&params=imgar:w`
     );

@@ -5,10 +5,12 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Upload } from "lucide-react";
+import { useSearch } from "@/contexts/SearchContext";
 
 export function VenueBatchUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
+  const { searchType } = useSearch();
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -27,6 +29,7 @@ export function VenueBatchUpload() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('search_type', searchType);
 
       const { data, error } = await supabase.functions.invoke('process-venue-csv', {
         body: formData,
