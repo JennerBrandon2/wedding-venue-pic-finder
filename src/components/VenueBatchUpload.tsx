@@ -32,7 +32,10 @@ export function VenueBatchUpload() {
       formData.append('search_type', searchType);
 
       const { data, error } = await supabase.functions.invoke('process-venue-csv', {
-        body: formData,
+        body: { 
+          file: await file.text(),
+          search_type: searchType
+        }
       });
 
       if (error) throw error;
@@ -49,7 +52,7 @@ export function VenueBatchUpload() {
         variant: "destructive",
       });
     } finally {
-      setIsUploading(false);
+      setIsLoading(false);
       if (e.target) e.target.value = '';
     }
   };

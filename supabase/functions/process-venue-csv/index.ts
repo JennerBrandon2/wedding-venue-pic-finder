@@ -17,16 +17,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const formData = await req.formData();
-    const file = formData.get('file');
-
-    if (!file || !(file instanceof File)) {
-      throw new Error('No CSV file provided');
+    const { file, search_type } = await req.json();
+    
+    if (!file) {
+      throw new Error('No CSV content provided');
     }
 
-    // Read and parse CSV content
-    const text = await file.text();
-    const lines = text.split('\n')
+    // Parse CSV content
+    const lines = file.split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0);
 
@@ -38,7 +36,7 @@ Deno.serve(async (req) => {
     // Create import record
     const { data: importData, error: importError } = await supabase
       .from('venue_csv_imports')
-      .insert({ filename: file.name })
+      .insert({ filename: 'csv-upload' })
       .select()
       .single();
 
@@ -71,7 +69,8 @@ Deno.serve(async (req) => {
         body: { 
           venue_name: firstVenue.venue_name,
           import_id: importData.id,
-          venue_item_id: firstVenue.id
+          venue_item_id: firstVenue.id,
+          search_type: search_type
         }
       });
     }
