@@ -99,9 +99,11 @@ Deno.serve(async (req) => {
 
     if (searchError) throw searchError;
 
-    // Call SerpAPI to search for venue images
+    // Call SerpAPI to search for venue images with wide aspect ratio
     const searchQuery = `${venue_name} wedding venue`;
-    const response = await fetch(`https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15`);
+    const response = await fetch(
+      `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15&params=imgar:w`
+    );
     
     if (!response.ok) {
       throw new Error('Failed to fetch images from SerpAPI');
@@ -135,7 +137,7 @@ Deno.serve(async (req) => {
     const images = data.images_results.slice(0, 15).map((img: any) => ({
       image_url: img.original || img.thumbnail,
       alt_text: img.title || `Wedding venue ${venue_name}`,
-      venue_name: venue_name // Include venue_name for each image
+      venue_name: venue_name
     }));
 
     // Save images with venue_name
@@ -145,7 +147,7 @@ Deno.serve(async (req) => {
         search_id: searchData.id,
         image_url: img.image_url,
         alt_text: img.alt_text,
-        venue_name: venue_name // Save venue_name with each image
+        venue_name: venue_name
       })))
       .select();
 
