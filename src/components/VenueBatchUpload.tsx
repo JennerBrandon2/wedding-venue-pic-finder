@@ -52,7 +52,7 @@ export function VenueBatchUpload() {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setIsUploading(false);
       if (e.target) e.target.value = '';
     }
   };
