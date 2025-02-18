@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import {
   Table,
@@ -11,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { Download, FileDown } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 interface VenueImportItem {
@@ -27,6 +26,7 @@ interface VenueImportItem {
 interface VenueImage {
   image_url: string;
   venue_name: string;
+  search_id: string;
 }
 
 export function VenueImportResults() {
@@ -45,87 +45,68 @@ export function VenueImportResults() {
       if (error) throw error;
       return data as VenueImportItem[];
     },
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: 5000,
   });
-
-  const fetchImagesWithRetry = async (searchId: string, retries = 3) => {
-    for (let attempt = 0; attempt < retries; attempt++) {
-      try {
-        const { data, error } = await supabase
-          .from('venue_images')
-          .select('image_url, venue_name')
-          .eq('search_id', searchId);
-        
-        if (error) throw error;
-        return data;
-      } catch (err) {
-        if (attempt === retries - 1) throw err;
-        // Wait for a short time before retrying
-        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-      }
-    }
-    return null;
-  };
 
   const exportToCsv = async () => {
     try {
       setIsExporting(true);
       
-      // Get all completed venue searches
-      const { data: completedItems, error: itemsError } = await supabase
+      // Get all completed items and their images in a single query
+      const { data, error } = await supabase
         .from('venue_import_items')
-        .select('venue_name, search_id, search_type')
+        .select(`
+          venue_name,
+          search_id,
+          search_type,
+          venue_images (
+            image_url
+          )
+        `)
         .eq('status', 'completed')
         .not('search_id', 'is', null);
 
-      if (itemsError) throw itemsError;
+      if (error) throw error;
 
-      // Get all images for these searches
-      const results: { venue_name: string; urls: string[]; search_type: string }[] = [];
-      
-      for (const item of completedItems) {
-        try {
-          if (!item.search_id) continue;
-          
-          const images = await fetchImagesWithRetry(item.search_id);
-          
-          if (images && images.length > 0) {
-            results.push({
-              venue_name: item.venue_name,
-              urls: images.map((img: VenueImage) => img.image_url),
-              search_type: item.search_type
-            });
-          }
-        } catch (error) {
-          console.error(`Failed to fetch images for ${item.venue_name}:`, error);
-          // Continue with other venues even if one fails
-          continue;
-        }
-      }
-
-      if (results.length === 0) {
+      if (!data || data.length === 0) {
         toast({
           title: "No Data to Export",
-          description: "No completed venues with images found",
+          description: "No completed venues found",
           variant: "destructive",
         });
         return;
       }
 
-      // Find the maximum number of URLs for any venue
+      // Process the data
+      const results = data.filter(item => item.venue_images?.length > 0)
+        .map(item => ({
+          venue_name: item.venue_name,
+          search_type: item.search_type,
+          urls: item.venue_images.map((img: any) => img.image_url)
+        }));
+
+      if (results.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "No venues with images found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Find the maximum number of URLs
       const maxUrls = Math.max(...results.map(r => r.urls.length));
       
-      // Create headers: Venue Name + Search Type + URL columns
+      // Create headers
       const headers = ['Venue Name', 'Search Type'];
       for (let i = 1; i <= maxUrls; i++) {
         headers.push(`Image URL ${i}`);
       }
 
-      // Create CSV content with each URL in its own column
+      // Create CSV content
       const csvRows = [headers];
       results.forEach(result => {
         const row = [result.venue_name, result.search_type];
-        // Add each URL to its own column, pad with empty strings if needed
         for (let i = 0; i < maxUrls; i++) {
           row.push(result.urls[i] || '');
         }
@@ -136,7 +117,7 @@ export function VenueImportResults() {
         .map(row => row.map(cell => `"${cell}"`).join(','))
         .join('\n');
 
-      // Create and download the CSV file
+      // Download the CSV
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
