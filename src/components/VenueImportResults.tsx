@@ -21,6 +21,7 @@ interface VenueImportItem {
   error_message: string | null;
   created_at: string;
   search_id: string | null;
+  search_type: string;
 }
 
 interface VenueImage {
@@ -54,14 +55,14 @@ export function VenueImportResults() {
       // Get all completed venue searches
       const { data: completedItems, error: itemsError } = await supabase
         .from('venue_import_items')
-        .select('venue_name, search_id')
+        .select('venue_name, search_id, search_type')
         .eq('status', 'completed')
         .not('search_id', 'is', null);
 
       if (itemsError) throw itemsError;
 
       // Get all images for these searches
-      const results: { venue_name: string; urls: string[] }[] = [];
+      const results: { venue_name: string; urls: string[]; search_type: string }[] = [];
       
       for (const item of completedItems) {
         const { data: images, error: imagesError } = await supabase
@@ -74,7 +75,8 @@ export function VenueImportResults() {
         if (images && images.length > 0) {
           results.push({
             venue_name: item.venue_name,
-            urls: images.map((img: VenueImage) => img.image_url)
+            urls: images.map((img: VenueImage) => img.image_url),
+            search_type: item.search_type
           });
         }
       }
@@ -82,8 +84,8 @@ export function VenueImportResults() {
       // Find the maximum number of URLs for any venue
       const maxUrls = Math.max(...results.map(r => r.urls.length));
       
-      // Create headers: Venue Name + URL columns
-      const headers = ['Venue Name'];
+      // Create headers: Venue Name + Search Type + URL columns
+      const headers = ['Venue Name', 'Search Type'];
       for (let i = 1; i <= maxUrls; i++) {
         headers.push(`Image URL ${i}`);
       }
@@ -91,7 +93,7 @@ export function VenueImportResults() {
       // Create CSV content with each URL in its own column
       const csvRows = [headers];
       results.forEach(result => {
-        const row = [result.venue_name];
+        const row = [result.venue_name, result.search_type];
         // Add each URL to its own column, pad with empty strings if needed
         for (let i = 0; i < maxUrls; i++) {
           row.push(result.urls[i] || '');
@@ -162,6 +164,7 @@ export function VenueImportResults() {
           <TableHeader>
             <TableRow>
               <TableHead>Venue Name</TableHead>
+              <TableHead>Search Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Created At</TableHead>
               <TableHead>Error</TableHead>
@@ -171,6 +174,7 @@ export function VenueImportResults() {
             {items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.venue_name}</TableCell>
+                <TableCell>{item.search_type}</TableCell>
                 <TableCell>
                   <span className={
                     item.status === 'completed' ? 'text-green-600' :
