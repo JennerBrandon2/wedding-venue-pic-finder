@@ -48,6 +48,25 @@ export function VenueImportResults() {
     refetchInterval: 5000, // Refresh every 5 seconds
   });
 
+  const fetchImagesWithRetry = async (searchId: string, retries = 3) => {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const { data, error } = await supabase
+          .from('venue_images')
+          .select('image_url, venue_name')
+          .eq('search_id', searchId);
+        
+        if (error) throw error;
+        return data;
+      } catch (err) {
+        if (attempt === retries - 1) throw err;
+        // Wait for a short time before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
+    }
+    return null;
+  };
+
   const exportToCsv = async () => {
     try {
       setIsExporting(true);
@@ -65,20 +84,32 @@ export function VenueImportResults() {
       const results: { venue_name: string; urls: string[]; search_type: string }[] = [];
       
       for (const item of completedItems) {
-        const { data: images, error: imagesError } = await supabase
-          .from('venue_images')
-          .select('image_url, venue_name')
-          .eq('search_id', item.search_id);
-
-        if (imagesError) throw imagesError;
-
-        if (images && images.length > 0) {
-          results.push({
-            venue_name: item.venue_name,
-            urls: images.map((img: VenueImage) => img.image_url),
-            search_type: item.search_type
-          });
+        try {
+          if (!item.search_id) continue;
+          
+          const images = await fetchImagesWithRetry(item.search_id);
+          
+          if (images && images.length > 0) {
+            results.push({
+              venue_name: item.venue_name,
+              urls: images.map((img: VenueImage) => img.image_url),
+              search_type: item.search_type
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to fetch images for ${item.venue_name}:`, error);
+          // Continue with other venues even if one fails
+          continue;
         }
+      }
+
+      if (results.length === 0) {
+        toast({
+          title: "No Data to Export",
+          description: "No completed venues with images found",
+          variant: "destructive",
+        });
+        return;
       }
 
       // Find the maximum number of URLs for any venue
@@ -116,13 +147,13 @@ export function VenueImportResults() {
 
       toast({
         title: "Export Successful",
-        description: "CSV file has been downloaded",
+        description: `Successfully exported ${results.length} venues`,
       });
     } catch (error) {
       console.error('Export error:', error);
       toast({
         title: "Export Failed",
-        description: "Failed to export CSV file",
+        description: "Failed to export CSV file. Please try again.",
         variant: "destructive",
       });
     } finally {
