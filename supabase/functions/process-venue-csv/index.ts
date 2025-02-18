@@ -18,9 +18,14 @@ Deno.serve(async (req) => {
 
   try {
     const { file, search_type } = await req.json();
+    console.log('Received search_type:', search_type); // Add logging
     
     if (!file) {
       throw new Error('No CSV content provided');
+    }
+
+    if (!search_type) {
+      throw new Error('No search type provided');
     }
 
     // Parse CSV content
@@ -33,10 +38,13 @@ Deno.serve(async (req) => {
       lines.shift();
     }
 
-    // Create import record
+    // Create import record with search_type
     const { data: importData, error: importError } = await supabase
       .from('venue_csv_imports')
-      .insert({ filename: 'csv-upload' })
+      .insert({
+        filename: 'csv-upload',
+        search_type: search_type // Store search_type in the import record
+      })
       .select()
       .single();
 
@@ -46,6 +54,7 @@ Deno.serve(async (req) => {
     const venueItems = lines.map(venueName => ({
       import_id: importData.id,
       venue_name: venueName.replace(/"/g, '').trim(),
+      search_type: search_type // Store search_type for each venue item
     }));
 
     const { error: itemsError } = await supabase
@@ -54,32 +63,36 @@ Deno.serve(async (req) => {
 
     if (itemsError) throw itemsError;
 
-    // Start processing the first venue
-    const { data: firstVenue } = await supabase
-      .from('venue_import_items')
-      .select()
-      .eq('import_id', importData.id)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
+    // Process all venues
+    for (const venueName of lines) {
+      const { data: venueItem } = await supabase
+        .from('venue_import_items')
+        .select()
+        .eq('import_id', importData.id)
+        .eq('venue_name', venueName.replace(/"/g, '').trim())
+        .single();
 
-    if (firstVenue) {
-      // Trigger the search for the first venue
-      await supabase.functions.invoke('search-venues', {
-        body: { 
-          venue_name: firstVenue.venue_name,
-          import_id: importData.id,
-          venue_item_id: firstVenue.id,
-          search_type: search_type
-        }
-      });
+      if (venueItem) {
+        console.log(`Triggering search for ${venueName} with search_type: ${search_type}`);
+        
+        // Trigger the search for each venue with the correct search_type
+        await supabase.functions.invoke('search-venues', {
+          body: { 
+            venue_name: venueItem.venue_name,
+            import_id: importData.id,
+            venue_item_id: venueItem.id,
+            search_type: search_type // Pass search_type for each search
+          }
+        });
+      }
     }
 
     return new Response(
       JSON.stringify({ 
         message: 'CSV processing started', 
         import_id: importData.id,
-        total_venues: venueItems.length 
+        total_venues: venueItems.length,
+        search_type: search_type // Include search_type in response
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
