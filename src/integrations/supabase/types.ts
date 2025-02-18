@@ -14,18 +14,21 @@ export type Database = {
           created_at: string
           filename: string
           id: string
+          search_type: string
           status: string
         }
         Insert: {
           created_at?: string
           filename: string
           id?: string
+          search_type?: string
           status?: string
         }
         Update: {
           created_at?: string
           filename?: string
           id?: string
+          search_type?: string
           status?: string
         }
         Relationships: []
@@ -72,6 +75,7 @@ export type Database = {
           id: string
           import_id: string
           search_id: string | null
+          search_type: string
           status: string
           venue_name: string
         }
@@ -81,6 +85,7 @@ export type Database = {
           id?: string
           import_id: string
           search_id?: string | null
+          search_type?: string
           status?: string
           venue_name: string
         }
@@ -90,6 +95,7 @@ export type Database = {
           id?: string
           import_id?: string
           search_id?: string | null
+          search_type?: string
           status?: string
           venue_name?: string
         }
