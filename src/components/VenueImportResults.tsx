@@ -58,25 +58,36 @@ export function VenueImportResults() {
     refetchInterval: 5000,
   });
 
+  const fetchImages = async (searchIds: string[]) => {
+    try {
+      const { data, error } = await supabase
+        .from('venue_images')
+        .select('*')
+        .in('search_id', searchIds);
+
+      if (error) throw error;
+      return data as VenueImageResult[];
+    } catch (error) {
+      console.error('Error fetching images:', error);
+      throw error;
+    }
+  };
+
   const exportToCsv = async () => {
     try {
       setIsExporting(true);
       console.log('Starting export process...');
 
-      // Get completed items
-      const { data: completedItems, error: itemsError } = await supabase
+      // Get completed items with valid search IDs
+      const { data: items, error: itemsError } = await supabase
         .from('venue_import_items')
         .select('venue_name, search_id, search_type')
         .eq('status', 'completed')
         .not('search_id', 'is', null);
 
-      if (itemsError) {
-        console.error('Error fetching completed items:', itemsError);
-        throw new Error(`Failed to fetch completed items: ${itemsError.message}`);
-      }
+      if (itemsError) throw itemsError;
 
-      if (!completedItems?.length) {
-        console.log('No completed items found');
+      if (!items?.length) {
         toast({
           title: "No Data to Export",
           description: "No completed venues found",
@@ -85,18 +96,21 @@ export function VenueImportResults() {
         return;
       }
 
-      console.log(`Found ${completedItems.length} completed items`);
+      console.log(`Found ${items.length} completed items`);
 
-      // Get unique search IDs
-      const searchIds = completedItems
-        .filter(item => item.search_id)
-        .map(item => item.search_id as string); // We've filtered out nulls above
+      // Extract unique search IDs
+      const searchIds = Array.from(new Set(
+        items
+          .filter((item): item is VenueImportItem & { search_id: string } => 
+            item.search_id !== null
+          )
+          .map(item => item.search_id)
+      ));
 
-      if (!searchIds.length) {
-        console.log('No search IDs found in completed items');
+      if (searchIds.length === 0) {
         toast({
-          title: "Export Failed",
-          description: "No valid search IDs found in completed venues",
+          title: "No Data to Export",
+          description: "No valid search IDs found",
           variant: "destructive",
         });
         return;
@@ -104,33 +118,33 @@ export function VenueImportResults() {
 
       console.log(`Processing ${searchIds.length} unique search IDs`);
 
-      // Fetch images for all search IDs at once
-      const { data: images, error: imagesError } = await supabase
-        .from('venue_images')
-        .select('*')
-        .in('search_id', searchIds);
+      // Fetch images in batches to avoid timeouts
+      const BATCH_SIZE = 20;
+      let allImages: VenueImageResult[] = [];
 
-      if (imagesError) {
-        console.error('Error fetching images:', imagesError);
-        throw new Error(`Failed to fetch images: ${imagesError.message}`);
+      for (let i = 0; i < searchIds.length; i += BATCH_SIZE) {
+        const batchIds = searchIds.slice(i, i + BATCH_SIZE);
+        try {
+          const batchImages = await fetchImages(batchIds);
+          allImages = allImages.concat(batchImages);
+        } catch (error) {
+          console.error(`Failed to fetch batch ${i / BATCH_SIZE + 1}:`, error);
+        }
       }
 
-      const typedImages = images as VenueImageResult[] | null;
-
-      if (!typedImages?.length) {
-        console.log('No images found for any search IDs');
+      if (allImages.length === 0) {
         toast({
           title: "No Images Found",
-          description: "No images were found for any of the completed venues",
+          description: "No images were found for the completed venues",
           variant: "destructive",
         });
         return;
       }
 
-      console.log(`Found ${typedImages.length} total images`);
+      console.log(`Found ${allImages.length} total images`);
 
       // Create image lookup table
-      const imagesBySearchId = typedImages.reduce<Record<string, string[]>>((acc, img) => {
+      const imagesBySearchId = allImages.reduce<Record<string, string[]>>((acc, img) => {
         if (img.search_id) {
           if (!acc[img.search_id]) {
             acc[img.search_id] = [];
@@ -141,7 +155,7 @@ export function VenueImportResults() {
       }, {});
 
       // Match venues with their images
-      const results: ResultRow[] = completedItems
+      const results: ResultRow[] = items
         .filter(item => {
           const hasImages = item.search_id && imagesBySearchId[item.search_id]?.length > 0;
           if (!hasImages) {
@@ -155,8 +169,7 @@ export function VenueImportResults() {
           urls: imagesBySearchId[item.search_id!]
         }));
 
-      if (!results.length) {
-        console.log('No venues matched with images');
+      if (results.length === 0) {
         toast({
           title: "No Data Available",
           description: "No venues could be matched with their images",
@@ -167,42 +180,30 @@ export function VenueImportResults() {
 
       console.log(`Preparing CSV for ${results.length} venues with images`);
 
-      // Find the maximum number of URLs
-      const maxUrls = Math.max(...results.map(r => r.urls.length));
-      
-      // Create headers
-      const headers = ['Venue Name', 'Search Type'];
-      for (let i = 1; i <= maxUrls; i++) {
-        headers.push(`Image URL ${i}`);
-      }
-
       // Create CSV content
-      const csvRows = [headers];
-      results.forEach(result => {
-        const row = [result.venue_name, result.search_type];
-        for (let i = 0; i < maxUrls; i++) {
-          row.push(result.urls[i] || '');
-        }
-        csvRows.push(row);
-      });
+      const maxUrls = Math.max(...results.map(r => r.urls.length));
+      const headers = ['Venue Name', 'Search Type', ...Array(maxUrls).fill(0).map((_, i) => `Image URL ${i + 1}`)];
+      
+      const csvContent = [
+        headers.join(','),
+        ...results.map(result => [
+          `"${result.venue_name.replace(/"/g, '""')}"`,
+          `"${result.search_type.replace(/"/g, '""')}"`,
+          ...Array(maxUrls).fill('').map((_, i) => result.urls[i] ? `"${result.urls[i].replace(/"/g, '""')}"` : '')
+        ].join(','))
+      ].join('\n');
 
-      const csvContent = csvRows
-        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`)
-        .join(','))
-        .join('\n');
-
-      // Create and download file
+      // Download file
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `venue_images_${new Date().toISOString().slice(0,10)}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      URL.revokeObjectURL(url);
 
-      console.log('Export completed successfully');
       toast({
         title: "Export Successful",
         description: `Successfully exported ${results.length} venues with images`,
@@ -211,7 +212,7 @@ export function VenueImportResults() {
       console.error('Export error:', error);
       toast({
         title: "Export Failed",
-        description: error instanceof Error ? error.message : "Failed to export CSV file. Please try again.",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     } finally {
@@ -260,7 +261,7 @@ export function VenueImportResults() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((item) => (
+            {items?.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.venue_name}</TableCell>
                 <TableCell>{item.search_type}</TableCell>
