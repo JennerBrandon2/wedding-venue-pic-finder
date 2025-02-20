@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import {
   Table,
@@ -52,23 +53,16 @@ export function VenueImportResults() {
     try {
       setIsExporting(true);
       
-      // Get all completed items and their images in a single query
-      const { data, error } = await supabase
+      // First get all completed venue items
+      const { data: completedItems, error: itemsError } = await supabase
         .from('venue_import_items')
-        .select(`
-          venue_name,
-          search_id,
-          search_type,
-          venue_images (
-            image_url
-          )
-        `)
+        .select('venue_name, search_id, search_type')
         .eq('status', 'completed')
         .not('search_id', 'is', null);
 
-      if (error) throw error;
+      if (itemsError) throw itemsError;
 
-      if (!data || data.length === 0) {
+      if (!completedItems || completedItems.length === 0) {
         toast({
           title: "No Data to Export",
           description: "No completed venues found",
@@ -77,12 +71,37 @@ export function VenueImportResults() {
         return;
       }
 
-      // Process the data
-      const results = data.filter(item => item.venue_images?.length > 0)
+      // Get all search IDs
+      const searchIds = completedItems
+        .filter(item => item.search_id)
+        .map(item => item.search_id);
+
+      // Get all images for these search IDs in one query
+      const { data: images, error: imagesError } = await supabase
+        .from('venue_images')
+        .select('image_url, search_id')
+        .in('search_id', searchIds);
+
+      if (imagesError) throw imagesError;
+
+      // Group images by search_id
+      const imagesBySearchId = (images || []).reduce((acc: Record<string, string[]>, img) => {
+        if (img.search_id) {
+          if (!acc[img.search_id]) {
+            acc[img.search_id] = [];
+          }
+          acc[img.search_id].push(img.image_url);
+        }
+        return acc;
+      }, {});
+
+      // Combine data
+      const results = completedItems
+        .filter(item => item.search_id && imagesBySearchId[item.search_id]?.length > 0)
         .map(item => ({
           venue_name: item.venue_name,
           search_type: item.search_type,
-          urls: item.venue_images.map((img: any) => img.image_url)
+          urls: imagesBySearchId[item.search_id!] || []
         }));
 
       if (results.length === 0) {
