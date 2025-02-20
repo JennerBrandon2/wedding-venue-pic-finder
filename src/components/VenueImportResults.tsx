@@ -52,21 +52,22 @@ export function VenueImportResults() {
   const exportToCsv = async () => {
     try {
       setIsExporting(true);
+      console.log('Starting export process...');
 
-      // Get completed items in smaller chunks
+      // Get completed items
       const { data: completedItems, error: itemsError } = await supabase
         .from('venue_import_items')
         .select('venue_name, search_id, search_type')
         .eq('status', 'completed')
-        .not('search_id', 'is', null)
-        .limit(100); // Limit to prevent timeout
+        .not('search_id', 'is', null);
 
       if (itemsError) {
         console.error('Error fetching completed items:', itemsError);
-        throw itemsError;
+        throw new Error(`Failed to fetch completed items: ${itemsError.message}`);
       }
 
-      if (!completedItems || completedItems.length === 0) {
+      if (!completedItems?.length) {
+        console.log('No completed items found');
         toast({
           title: "No Data to Export",
           description: "No completed venues found",
@@ -75,56 +76,50 @@ export function VenueImportResults() {
         return;
       }
 
-      // Create lookup of search IDs
-      const searchIdSet = new Set(
-        completedItems
-          .filter(item => item.search_id)
-          .map(item => item.search_id)
-      );
+      console.log(`Found ${completedItems.length} completed items`);
 
-      const searchIds = Array.from(searchIdSet);
-      
-      if (searchIds.length === 0) {
+      // Get unique search IDs
+      const searchIds = completedItems
+        .filter(item => item.search_id)
+        .map(item => item.search_id);
+
+      if (!searchIds.length) {
+        console.log('No search IDs found in completed items');
         toast({
-          title: "No Data to Export",
-          description: "No valid search IDs found",
+          title: "Export Failed",
+          description: "No valid search IDs found in completed venues",
           variant: "destructive",
         });
         return;
       }
 
-      // Get images in chunks to prevent timeouts
-      const CHUNK_SIZE = 20;
-      let allImages: any[] = [];
-      
-      for (let i = 0; i < searchIds.length; i += CHUNK_SIZE) {
-        const chunk = searchIds.slice(i, i + CHUNK_SIZE);
-        const { data: images, error: imagesError } = await supabase
-          .from('venue_images')
-          .select('image_url, search_id')
-          .in('search_id', chunk);
+      console.log(`Processing ${searchIds.length} unique search IDs`);
 
-        if (imagesError) {
-          console.error('Error fetching images for chunk:', chunk, imagesError);
-          continue; // Skip failed chunks but continue with others
-        }
+      // Fetch images for all search IDs at once
+      const { data: images, error: imagesError } = await supabase
+        .from('venue_images')
+        .select('*')
+        .in('search_id', searchIds);
 
-        if (images) {
-          allImages = allImages.concat(images);
-        }
+      if (imagesError) {
+        console.error('Error fetching images:', imagesError);
+        throw new Error(`Failed to fetch images: ${imagesError.message}`);
       }
 
-      if (allImages.length === 0) {
+      if (!images?.length) {
+        console.log('No images found for any search IDs');
         toast({
           title: "No Images Found",
-          description: "No images found for the completed venues",
+          description: "No images were found for any of the completed venues",
           variant: "destructive",
         });
         return;
       }
 
+      console.log(`Found ${images.length} total images`);
+
       // Create image lookup table
-      const imagesBySearchId = allImages.reduce((acc: Record<string, string[]>, img) => {
+      const imagesBySearchId = images.reduce((acc: Record<string, string[]>, img) => {
         if (img.search_id) {
           if (!acc[img.search_id]) {
             acc[img.search_id] = [];
@@ -134,23 +129,32 @@ export function VenueImportResults() {
         return acc;
       }, {});
 
-      // Prepare CSV data
+      // Match venues with their images
       const results = completedItems
-        .filter(item => item.search_id && imagesBySearchId[item.search_id]?.length > 0)
+        .filter(item => {
+          const hasImages = item.search_id && imagesBySearchId[item.search_id]?.length > 0;
+          if (!hasImages) {
+            console.log(`No images found for venue: ${item.venue_name} (search_id: ${item.search_id})`);
+          }
+          return hasImages;
+        })
         .map(item => ({
           venue_name: item.venue_name,
           search_type: item.search_type,
-          urls: imagesBySearchId[item.search_id!] || []
+          urls: imagesBySearchId[item.search_id!]
         }));
 
-      if (results.length === 0) {
+      if (!results.length) {
+        console.log('No venues matched with images');
         toast({
-          title: "No Data to Export",
-          description: "No venues with images found",
+          title: "No Data Available",
+          description: "No venues could be matched with their images",
           variant: "destructive",
         });
         return;
       }
+
+      console.log(`Preparing CSV for ${results.length} venues with images`);
 
       // Find the maximum number of URLs
       const maxUrls = Math.max(...results.map(r => r.urls.length));
@@ -172,7 +176,7 @@ export function VenueImportResults() {
       });
 
       const csvContent = csvRows
-        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`) // Properly escape quotes
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`)
         .join(','))
         .join('\n');
 
@@ -187,6 +191,7 @@ export function VenueImportResults() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
+      console.log('Export completed successfully');
       toast({
         title: "Export Successful",
         description: `Successfully exported ${results.length} venues with images`,
@@ -195,7 +200,7 @@ export function VenueImportResults() {
       console.error('Export error:', error);
       toast({
         title: "Export Failed",
-        description: "Failed to export CSV file. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to export CSV file. Please try again.",
         variant: "destructive",
       });
     } finally {
