@@ -81,34 +81,41 @@ export function VenueImportResults() {
       setIsExporting(true);
       console.log('Starting export process...');
 
-      // Get all items from the most recent import
-      const { data: items, error: itemsError } = await supabase
-        .from('venue_import_items')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Get the most recent import_id first
+      const { data: recentImport, error: recentError } = await supabase
+        .from('venue_csv_imports')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
 
-      if (itemsError) throw itemsError;
-
-      if (!items?.length) {
+      if (recentError) throw recentError;
+      if (!recentImport) {
         toast({
-          title: "No Data to Export",
-          description: "No venues found",
+          title: "No Imports Found",
+          description: "No CSV imports found in the system",
           variant: "destructive",
         });
         return;
       }
 
-      // Group items by import_id and get the most recent import
-      const importGroups = items.reduce<Record<string, VenueImportItem[]>>((acc, item) => {
-        if (!acc[item.import_id]) {
-          acc[item.import_id] = [];
-        }
-        acc[item.import_id].push(item);
-        return acc;
-      }, {});
+      // Get ALL items from the most recent import
+      const { data: importItems, error: itemsError } = await supabase
+        .from('venue_import_items')
+        .select('*')
+        .eq('import_id', recentImport.id)
+        .order('created_at', { ascending: true });
 
-      const mostRecentImportId = Object.keys(importGroups)[0];
-      const importItems = importGroups[mostRecentImportId];
+      if (itemsError) throw itemsError;
+
+      if (!importItems?.length) {
+        toast({
+          title: "No Data to Export",
+          description: "No venues found in the most recent import",
+          variant: "destructive",
+        });
+        return;
+      }
 
       console.log(`Found ${importItems.length} items from import`);
 
@@ -125,14 +132,15 @@ export function VenueImportResults() {
       let allImages: VenueImageResult[] = [];
       if (searchIds.length > 0) {
         // Fetch images in batches
-        const BATCH_SIZE = 20;
+        const BATCH_SIZE = 50; // Increased batch size
         for (let i = 0; i < searchIds.length; i += BATCH_SIZE) {
           const batchIds = searchIds.slice(i, i + BATCH_SIZE);
           try {
             const batchImages = await fetchImages(batchIds);
             allImages = allImages.concat(batchImages);
+            console.log(`Fetched ${batchImages.length} images for batch ${Math.floor(i / BATCH_SIZE) + 1}`);
           } catch (error) {
-            console.error(`Failed to fetch batch ${i / BATCH_SIZE + 1}:`, error);
+            console.error(`Failed to fetch batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error);
           }
         }
       }
