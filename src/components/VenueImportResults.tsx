@@ -22,6 +22,7 @@ interface VenueImportItem {
   created_at: string;
   search_id: string | null;
   search_type: string;
+  import_id: string;
 }
 
 interface VenueImageResult {
@@ -36,6 +37,8 @@ interface VenueImageResult {
 interface ResultRow {
   venue_name: string;
   search_type: string;
+  status: string;
+  error_message: string | null;
   urls: string[];
 }
 
@@ -78,67 +81,60 @@ export function VenueImportResults() {
       setIsExporting(true);
       console.log('Starting export process...');
 
-      // Get completed items with valid search IDs
+      // Get all items from the most recent import
       const { data: items, error: itemsError } = await supabase
         .from('venue_import_items')
-        .select('venue_name, search_id, search_type')
-        .eq('status', 'completed')
-        .not('search_id', 'is', null);
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (itemsError) throw itemsError;
 
       if (!items?.length) {
         toast({
           title: "No Data to Export",
-          description: "No completed venues found",
+          description: "No venues found",
           variant: "destructive",
         });
         return;
       }
 
-      console.log(`Found ${items.length} completed items`);
+      // Group items by import_id and get the most recent import
+      const importGroups = items.reduce<Record<string, VenueImportItem[]>>((acc, item) => {
+        if (!acc[item.import_id]) {
+          acc[item.import_id] = [];
+        }
+        acc[item.import_id].push(item);
+        return acc;
+      }, {});
 
-      // Extract unique search IDs
+      const mostRecentImportId = Object.keys(importGroups)[0];
+      const importItems = importGroups[mostRecentImportId];
+
+      console.log(`Found ${importItems.length} items from import`);
+
+      // Get all search IDs (including null ones)
       const searchIds = Array.from(new Set(
-        items
-          .filter((item): item is VenueImportItem & { search_id: string } => 
-            item.search_id !== null
-          )
-          .map(item => item.search_id)
+        importItems
+          .filter(item => item.search_id !== null)
+          .map(item => item.search_id as string)
       ));
 
-      if (searchIds.length === 0) {
-        toast({
-          title: "No Data to Export",
-          description: "No valid search IDs found",
-          variant: "destructive",
-        });
-        return;
-      }
+      console.log(`Processing ${searchIds.length} search IDs`);
 
-      console.log(`Processing ${searchIds.length} unique search IDs`);
-
-      // Fetch images in batches to avoid timeouts
-      const BATCH_SIZE = 20;
+      // Fetch images for items that have search IDs
       let allImages: VenueImageResult[] = [];
-
-      for (let i = 0; i < searchIds.length; i += BATCH_SIZE) {
-        const batchIds = searchIds.slice(i, i + BATCH_SIZE);
-        try {
-          const batchImages = await fetchImages(batchIds);
-          allImages = allImages.concat(batchImages);
-        } catch (error) {
-          console.error(`Failed to fetch batch ${i / BATCH_SIZE + 1}:`, error);
+      if (searchIds.length > 0) {
+        // Fetch images in batches
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < searchIds.length; i += BATCH_SIZE) {
+          const batchIds = searchIds.slice(i, i + BATCH_SIZE);
+          try {
+            const batchImages = await fetchImages(batchIds);
+            allImages = allImages.concat(batchImages);
+          } catch (error) {
+            console.error(`Failed to fetch batch ${i / BATCH_SIZE + 1}:`, error);
+          }
         }
-      }
-
-      if (allImages.length === 0) {
-        toast({
-          title: "No Images Found",
-          description: "No images were found for the completed venues",
-          variant: "destructive",
-        });
-        return;
       }
 
       console.log(`Found ${allImages.length} total images`);
@@ -154,41 +150,37 @@ export function VenueImportResults() {
         return acc;
       }, {});
 
-      // Match venues with their images
-      const results: ResultRow[] = items
-        .filter(item => {
-          const hasImages = item.search_id && imagesBySearchId[item.search_id]?.length > 0;
-          if (!hasImages) {
-            console.log(`No images found for venue: ${item.venue_name} (search_id: ${item.search_id})`);
-          }
-          return hasImages;
-        })
-        .map(item => ({
-          venue_name: item.venue_name,
-          search_type: item.search_type,
-          urls: imagesBySearchId[item.search_id!]
-        }));
+      // Create results including all venues, even those without images
+      const results: ResultRow[] = importItems.map(item => ({
+        venue_name: item.venue_name,
+        search_type: item.search_type,
+        status: item.status,
+        error_message: item.error_message,
+        urls: item.search_id ? (imagesBySearchId[item.search_id] || []) : []
+      }));
 
-      if (results.length === 0) {
-        toast({
-          title: "No Data Available",
-          description: "No venues could be matched with their images",
-          variant: "destructive",
-        });
-        return;
-      }
+      console.log(`Preparing CSV for ${results.length} venues`);
 
-      console.log(`Preparing CSV for ${results.length} venues with images`);
+      // Find max URLs across all results
+      const maxUrls = Math.max(...results.map(r => r.urls.length));
+
+      // Create headers
+      const headers = [
+        'Venue Name',
+        'Search Type',
+        'Status',
+        'Error Message',
+        ...Array(maxUrls).fill(0).map((_, i) => `Image URL ${i + 1}`)
+      ];
 
       // Create CSV content
-      const maxUrls = Math.max(...results.map(r => r.urls.length));
-      const headers = ['Venue Name', 'Search Type', ...Array(maxUrls).fill(0).map((_, i) => `Image URL ${i + 1}`)];
-      
       const csvContent = [
         headers.join(','),
         ...results.map(result => [
           `"${result.venue_name.replace(/"/g, '""')}"`,
           `"${result.search_type.replace(/"/g, '""')}"`,
+          `"${result.status.replace(/"/g, '""')}"`,
+          `"${(result.error_message || '').replace(/"/g, '""')}"`,
           ...Array(maxUrls).fill('').map((_, i) => result.urls[i] ? `"${result.urls[i].replace(/"/g, '""')}"` : '')
         ].join(','))
       ].join('\n');
@@ -206,7 +198,7 @@ export function VenueImportResults() {
 
       toast({
         title: "Export Successful",
-        description: `Successfully exported ${results.length} venues with images`,
+        description: `Successfully exported ${results.length} venues`,
       });
     } catch (error) {
       console.error('Export error:', error);
@@ -261,7 +253,7 @@ export function VenueImportResults() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items?.map((item) => (
+            {items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.venue_name}</TableCell>
                 <TableCell>{item.search_type}</TableCell>
