@@ -24,10 +24,19 @@ interface VenueImportItem {
   search_type: string;
 }
 
-interface VenueImage {
+interface VenueImageResult {
+  id: string;
   image_url: string;
+  search_id: string | null;
   venue_name: string;
-  search_id: string;
+  alt_text: string;
+  created_at: string;
+}
+
+interface ResultRow {
+  venue_name: string;
+  search_type: string;
+  urls: string[];
 }
 
 export function VenueImportResults() {
@@ -81,7 +90,7 @@ export function VenueImportResults() {
       // Get unique search IDs
       const searchIds = completedItems
         .filter(item => item.search_id)
-        .map(item => item.search_id);
+        .map(item => item.search_id as string); // We've filtered out nulls above
 
       if (!searchIds.length) {
         console.log('No search IDs found in completed items');
@@ -106,7 +115,9 @@ export function VenueImportResults() {
         throw new Error(`Failed to fetch images: ${imagesError.message}`);
       }
 
-      if (!images?.length) {
+      const typedImages = images as VenueImageResult[] | null;
+
+      if (!typedImages?.length) {
         console.log('No images found for any search IDs');
         toast({
           title: "No Images Found",
@@ -116,10 +127,10 @@ export function VenueImportResults() {
         return;
       }
 
-      console.log(`Found ${images.length} total images`);
+      console.log(`Found ${typedImages.length} total images`);
 
       // Create image lookup table
-      const imagesBySearchId = images.reduce((acc: Record<string, string[]>, img) => {
+      const imagesBySearchId = typedImages.reduce<Record<string, string[]>>((acc, img) => {
         if (img.search_id) {
           if (!acc[img.search_id]) {
             acc[img.search_id] = [];
@@ -130,7 +141,7 @@ export function VenueImportResults() {
       }, {});
 
       // Match venues with their images
-      const results = completedItems
+      const results: ResultRow[] = completedItems
         .filter(item => {
           const hasImages = item.search_id && imagesBySearchId[item.search_id]?.length > 0;
           if (!hasImages) {
@@ -249,7 +260,7 @@ export function VenueImportResults() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items?.map((item) => (
+            {items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.venue_name}</TableCell>
                 <TableCell>{item.search_type}</TableCell>
