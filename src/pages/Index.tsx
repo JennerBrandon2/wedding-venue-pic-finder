@@ -4,6 +4,7 @@ import { SearchVenue } from "@/components/SearchVenue";
 import { VenueImageGrid } from "@/components/VenueImageGrid";
 import { VenueBatchUpload } from "@/components/VenueBatchUpload";
 import { VenueImportResults } from "@/components/VenueImportResults";
+import { PastSearches } from "@/components/PastSearches";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
