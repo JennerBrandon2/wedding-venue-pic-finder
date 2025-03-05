@@ -6,10 +6,15 @@ const apiKey = Deno.env.get('SERPAPI_API_KEY');
 const supabaseUrl = Deno.env.get('SUPABASE_URL');
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-if (!apiKey) throw new Error('SERPAPI_API_KEY is required');
-if (!supabaseUrl || !supabaseServiceKey) throw new Error('Supabase credentials required');
+// Validate required environment variables
+if (!apiKey) {
+  console.error('Missing required env var: SERPAPI_API_KEY');
+}
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Missing required Supabase credentials');
+}
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const supabase = createClient(supabaseUrl || '', supabaseServiceKey || '');
 
 Deno.serve(async (req) => {
   // Always handle CORS preflight requests first
@@ -19,8 +24,14 @@ Deno.serve(async (req) => {
 
   try {
     // Parse request body once at the start
-    const requestData = await req.json();
-    console.log('Received request data:', requestData);
+    let requestData;
+    try {
+      requestData = await req.json();
+      console.log('Received request data:', JSON.stringify(requestData));
+    } catch (error) {
+      console.error('Failed to parse request body:', error);
+      throw new Error('Invalid request body: ' + error.message);
+    }
     
     const { venue_name, import_id, venue_item_id, search_type = 'venue' } = requestData;
     
@@ -30,6 +41,10 @@ Deno.serve(async (req) => {
     if (!venue_name) {
       console.error('Missing venue_name in request');
       throw new Error('venue_name is required');
+    }
+
+    if (!apiKey) {
+      throw new Error('SERPAPI_API_KEY is missing. Please configure it in Supabase Dashboard.');
     }
     
     const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
@@ -52,7 +67,14 @@ Deno.serve(async (req) => {
     const hotelSearchQuery = `${venue_name} hotel details`;
     console.log(`Searching for hotel details with query: ${hotelSearchQuery}`);
     
-    const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
+    let hotelResponse;
+    try {
+      hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
+      console.log('Hotel search response status:', hotelResponse.status);
+    } catch (error) {
+      console.error('Failed to fetch hotel details:', error);
+      throw new Error(`Network error when fetching hotel details: ${error.message}`);
+    }
     
     if (!hotelResponse.ok) {
       const errorText = await hotelResponse.text();
@@ -60,8 +82,14 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch hotel details from SerpAPI: ${errorText}`);
     }
 
-    const hotelData = await hotelResponse.json();
-    console.log('Hotel search response received');
+    let hotelData;
+    try {
+      hotelData = await hotelResponse.json();
+      console.log('Hotel search response received');
+    } catch (error) {
+      console.error('Failed to parse hotel details response:', error);
+      throw new Error(`Invalid hotel details response: ${error.message}`);
+    }
     
     // Extract hotel details from the search results
     const hotelDetails = {
@@ -108,35 +136,49 @@ Deno.serve(async (req) => {
     
     // Create search record with hotel details
     console.log('Creating venue search record in database');
-    const { data: searchData, error: searchError } = await supabase
-      .from('venue_searches')
-      .insert([{ 
-        venue_name,
-        description: hotelDetails.description,
-        room_count: hotelDetails.room_count,
-        hotel_id: hotelDetails.hotel_id,
-        hotel_details: hotelData.knowledge_graph || {},
-        website: hotelDetails.website,
-        address: hotelDetails.address,
-        contact_details: hotelDetails.contact_details,
-        amenities: hotelDetails.amenities,
-        search_type
-      }])
-      .select()
-      .single();
+    let searchData;
+    try {
+      const { data, error: searchError } = await supabase
+        .from('venue_searches')
+        .insert([{ 
+          venue_name,
+          description: hotelDetails.description,
+          room_count: hotelDetails.room_count,
+          hotel_id: hotelDetails.hotel_id,
+          hotel_details: hotelData.knowledge_graph || {},
+          website: hotelDetails.website,
+          address: hotelDetails.address,
+          contact_details: hotelDetails.contact_details,
+          amenities: hotelDetails.amenities,
+          search_type
+        }])
+        .select()
+        .single();
 
-    if (searchError) {
-      console.error('Error creating search record:', searchError);
-      throw searchError;
+      if (searchError) {
+        console.error('Error creating search record:', searchError);
+        throw searchError;
+      }
+      searchData = data;
+    } catch (error) {
+      console.error('Failed to create search record:', error);
+      // Continue with the search even if we can't save to the database
     }
 
     // Call SerpAPI to search for venue images with wide aspect ratio
     const searchQuery = `${venue_name} ${searchSuffix}`;
     console.log(`Searching for images with query: ${searchQuery}`);
     
-    const response = await fetch(
-      `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15&params=imgar:w`
-    );
+    let response;
+    try {
+      response = await fetch(
+        `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15&params=imgar:w`
+      );
+      console.log('Image search response status:', response.status);
+    } catch (error) {
+      console.error('Failed to fetch images:', error);
+      throw new Error(`Network error when fetching images: ${error.message}`);
+    }
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -144,8 +186,14 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch images from SerpAPI: ${errorText}`);
     }
 
-    const data = await response.json();
-    console.log('Image search response received');
+    let data;
+    try {
+      data = await response.json();
+      console.log('Image search response received');
+    } catch (error) {
+      console.error('Failed to parse image search response:', error);
+      throw new Error(`Invalid image search response: ${error.message}`);
+    }
 
     if (!data.images_results || !Array.isArray(data.images_results)) {
       console.error('No images found or invalid response format:', data);
@@ -156,7 +204,7 @@ Deno.serve(async (req) => {
           .update({ 
             status: 'error',
             error_message: 'No images found',
-            search_id: searchData.id
+            search_id: searchData?.id
           })
           .eq('id', venue_item_id);
 
@@ -164,7 +212,11 @@ Deno.serve(async (req) => {
         await processNextVenue(import_id);
       }
 
-      return new Response(JSON.stringify({ images: [] }), {
+      return new Response(JSON.stringify({ 
+        images: [],
+        hotelDetails,
+        error: 'No images found or invalid response format'
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -179,38 +231,58 @@ Deno.serve(async (req) => {
     console.log(`Processing ${images.length} images`);
 
     // Save images with venue_name
-    const { data: savedImages, error: imageError } = await supabase
-      .from('venue_images')
-      .insert(images.map(img => ({
-        search_id: searchData.id,
-        image_url: img.image_url,
-        alt_text: img.alt_text,
-        venue_name: venue_name
-      })))
-      .select();
+    let savedImages = [];
+    try {
+      const { data: imgData, error: imageError } = await supabase
+        .from('venue_images')
+        .insert(images.map(img => ({
+          search_id: searchData?.id,
+          image_url: img.image_url,
+          alt_text: img.alt_text,
+          venue_name: venue_name
+        })))
+        .select();
 
-    if (imageError) {
-      console.error('Error saving images:', imageError);
-      throw imageError;
+      if (imageError) {
+        console.error('Error saving images:', imageError);
+        // Continue without throwing - we'll just return the images without saving them
+      } else {
+        savedImages = imgData || [];
+      }
+    } catch (error) {
+      console.error('Failed to save images:', error);
+      // Continue without throwing - we'll just return the images without saving them
+      savedImages = images;
     }
 
     // If this is part of a batch import, update status and process next venue
     if (import_id && venue_item_id) {
-      await supabase
-        .from('venue_import_items')
-        .update({ 
-          status: 'completed',
-          search_id: searchData.id
-        })
-        .eq('id', venue_item_id);
+      try {
+        await supabase
+          .from('venue_import_items')
+          .update({ 
+            status: 'completed',
+            search_id: searchData?.id
+          })
+          .eq('id', venue_item_id);
 
-      // Process next venue
-      await processNextVenue(import_id);
+        // Process next venue
+        await processNextVenue(import_id);
+      } catch (error) {
+        console.error('Failed to update venue item status:', error);
+        // Continue without throwing
+      }
     }
 
     console.log('Search completed successfully');
+    
+    // Return the result - if we couldn't save images to DB, return the raw images
     return new Response(JSON.stringify({ 
-      images: savedImages,
+      images: savedImages.length ? savedImages : images.map(img => ({
+        id: crypto.randomUUID(),
+        url: img.image_url,
+        alt: img.alt_text
+      })),
       hotelDetails
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -221,7 +293,8 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        error: error.message || 'An unexpected error occurred'
+        error: error.message || 'An unexpected error occurred',
+        stack: error.stack || 'No stack trace available'
       }),
       {
         status: 500,

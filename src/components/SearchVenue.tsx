@@ -23,6 +23,16 @@ export function SearchVenue({ onSearch }: { onSearch: (query: string) => void })
       return;
     }
     
+    // Ensure the query is at least 3 characters long
+    if (query.trim().length < 3) {
+      toast({
+        title: "Search query too short",
+        description: "Please enter at least 3 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     console.log(`Searching for: ${query.trim()} with type: ${searchType}`);
     onSearch(query.trim());
   };

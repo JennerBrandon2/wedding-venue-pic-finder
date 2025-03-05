@@ -4,11 +4,10 @@ import { SearchVenue } from "@/components/SearchVenue";
 import { VenueImageGrid } from "@/components/VenueImageGrid";
 import { VenueBatchUpload } from "@/components/VenueBatchUpload";
 import { VenueImportResults } from "@/components/VenueImportResults";
-import { PastSearches } from "@/components/PastSearches";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { VenueImage } from "@/types/venue";
-import { ExternalLink, Phone, Mail, Check } from "lucide-react";
+import { ExternalLink, Phone, Mail, Check, AlertCircle } from "lucide-react";
 import { useSearch } from "@/contexts/SearchContext";
 
 interface HotelDetails {
@@ -33,6 +32,7 @@ const Index = () => {
   const [images, setImages] = useState<VenueImage[]>([]);
   const [hotelDetails, setHotelDetails] = useState<HotelDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const { toast } = useToast();
   const { searchType } = useSearch();
 
@@ -40,6 +40,7 @@ const Index = () => {
     setIsLoading(true);
     setHotelDetails(null);
     setImages([]);
+    setSearchError(null);
     
     console.log(`Starting search for: "${query}" with type: ${searchType}`);
     
@@ -58,6 +59,7 @@ const Index = () => {
 
       if (functionError) {
         console.error('Function error:', functionError);
+        setSearchError(`Search failed: ${functionError.message || "Unknown error"}`);
         throw functionError;
       }
 
@@ -65,6 +67,7 @@ const Index = () => {
       
       if (!data?.images || !Array.isArray(data.images)) {
         console.error('No images found in response:', data);
+        setSearchError(`No images found for "${query}"`);
         toast({
           title: "No images found",
           description: `Couldn't find any images for "${query}"`,
@@ -75,9 +78,9 @@ const Index = () => {
 
       // Format images for display
       const newImages: VenueImage[] = data.images.map((img: any) => ({
-        id: crypto.randomUUID(),
-        url: img.image_url,
-        alt: img.alt_text
+        id: img.id || crypto.randomUUID(),
+        url: img.url || img.image_url,
+        alt: img.alt || img.alt_text
       }));
 
       console.log(`Processed ${newImages.length} images`);
@@ -95,9 +98,10 @@ const Index = () => {
       });
     } catch (error) {
       console.error('Search error:', error);
+      setSearchError(`Search failed: ${error.message || "Unknown error"}`);
       toast({
         title: "Error",
-        description: "Failed to search for venue images",
+        description: "Failed to search for venue images. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -109,6 +113,19 @@ const Index = () => {
     <main className="min-h-screen py-8 px-4">
       <div className="max-w-3xl mx-auto">
         <SearchVenue onSearch={handleSearch} />
+        
+        {searchError && (
+          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-md flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-red-800">Search Error</h3>
+              <p className="text-sm text-red-700">{searchError}</p>
+              <p className="text-sm text-red-600 mt-2">
+                Please try again with a different search term or contact support if the issue persists.
+              </p>
+            </div>
+          </div>
+        )}
         
         {hotelDetails && (
           <div className="mt-8 p-6 bg-white rounded-lg shadow-sm border space-y-4">
