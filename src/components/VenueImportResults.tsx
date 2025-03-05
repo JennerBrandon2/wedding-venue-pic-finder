@@ -62,7 +62,10 @@ export function VenueImportResults() {
   });
 
   const fetchImages = async (searchIds: string[]) => {
+    if (searchIds.length === 0) return [];
+    
     try {
+      console.log(`Fetching images for ${searchIds.length} search IDs`);
       const { data, error } = await supabase
         .from('venue_images')
         .select('*')
@@ -72,7 +75,7 @@ export function VenueImportResults() {
       return data as VenueImageResult[];
     } catch (error) {
       console.error('Error fetching images:', error);
-      throw error;
+      return [];
     }
   };
 
@@ -86,11 +89,14 @@ export function VenueImportResults() {
         .from('venue_csv_imports')
         .select('id')
         .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
 
-      if (recentError) throw recentError;
-      if (!recentImport) {
+      if (recentError) {
+        console.error('Error fetching recent import:', recentError);
+        throw recentError;
+      }
+      
+      if (!recentImport || recentImport.length === 0) {
         toast({
           title: "No Imports Found",
           description: "No CSV imports found in the system",
@@ -99,14 +105,19 @@ export function VenueImportResults() {
         return;
       }
 
+      const importId = recentImport[0].id;
+      console.log(`Found most recent import ID: ${importId}`);
+
       // Get ALL items from the most recent import
       const { data: importItems, error: itemsError } = await supabase
         .from('venue_import_items')
         .select('*')
-        .eq('import_id', recentImport.id)
-        .order('created_at', { ascending: true });
+        .eq('import_id', importId);
 
-      if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('Error fetching import items:', itemsError);
+        throw itemsError;
+      }
 
       if (!importItems?.length) {
         toast({
@@ -126,15 +137,18 @@ export function VenueImportResults() {
           .map(item => item.search_id as string)
       ));
 
-      console.log(`Processing ${searchIds.length} search IDs`);
+      console.log(`Processing ${searchIds.length} search IDs for images`);
 
       // Fetch images for items that have search IDs
       let allImages: VenueImageResult[] = [];
+      
       if (searchIds.length > 0) {
-        // Fetch images in batches
-        const BATCH_SIZE = 50; // Increased batch size
+        // Split into smaller batches to avoid timeouts
+        const BATCH_SIZE = 100; // Increased batch size
         for (let i = 0; i < searchIds.length; i += BATCH_SIZE) {
           const batchIds = searchIds.slice(i, i + BATCH_SIZE);
+          console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batchIds.length} IDs`);
+          
           try {
             const batchImages = await fetchImages(batchIds);
             allImages = allImages.concat(batchImages);
@@ -170,7 +184,7 @@ export function VenueImportResults() {
       console.log(`Preparing CSV for ${results.length} venues`);
 
       // Find max URLs across all results
-      const maxUrls = Math.max(...results.map(r => r.urls.length));
+      const maxUrls = Math.max(...results.map(r => r.urls.length), 1);
 
       // Create headers
       const headers = [
@@ -185,10 +199,10 @@ export function VenueImportResults() {
       const csvContent = [
         headers.join(','),
         ...results.map(result => [
-          `"${result.venue_name.replace(/"/g, '""')}"`,
-          `"${result.search_type.replace(/"/g, '""')}"`,
-          `"${result.status.replace(/"/g, '""')}"`,
-          `"${(result.error_message || '').replace(/"/g, '""')}"`,
+          `"${(result.venue_name || '').replace(/"/g, '""')}"`,
+          `"${(result.search_type || '').replace(/"/g, '""')}"`,
+          `"${(result.status || '').replace(/"/g, '""')}"`,
+          `"${((result.error_message || '').replace(/"/g, '""'))}"`,
           ...Array(maxUrls).fill('').map((_, i) => result.urls[i] ? `"${result.urls[i].replace(/"/g, '""')}"` : '')
         ].join(','))
       ].join('\n');
