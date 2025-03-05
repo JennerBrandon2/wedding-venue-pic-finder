@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { SearchVenue } from "@/components/SearchVenue";
 import { VenueImageGrid } from "@/components/VenueImageGrid";
@@ -38,23 +39,37 @@ const Index = () => {
   const handleSearch = async (query: string) => {
     setIsLoading(true);
     setHotelDetails(null);
+    setImages([]);
+    
+    console.log(`Starting search for: "${query}" with type: ${searchType}`);
+    
     try {
+      // Debug the request body to ensure it's properly formatted
+      const requestBody = { 
+        venue_name: query,
+        search_type: searchType 
+      };
+      
+      console.log('Request body:', requestBody);
+      
       const { data, error: functionError } = await supabase.functions.invoke('search-venues', {
-        body: { 
-          venue_name: query,
-          search_type: searchType
-        }
+        body: requestBody
       });
 
-      if (functionError) throw functionError;
+      if (functionError) {
+        console.error('Function error:', functionError);
+        throw functionError;
+      }
 
+      console.log('Search response:', data);
+      
       if (!data?.images || !Array.isArray(data.images)) {
+        console.error('No images found in response:', data);
         toast({
           title: "No images found",
           description: `Couldn't find any images for "${query}"`,
           variant: "destructive",
         });
-        setImages([]);
         return;
       }
 
@@ -65,10 +80,12 @@ const Index = () => {
         alt: img.alt_text
       }));
 
+      console.log(`Processed ${newImages.length} images`);
       setImages(newImages);
       
       // Set hotel details if available
       if (data.hotelDetails) {
+        console.log('Hotel details:', data.hotelDetails);
         setHotelDetails(data.hotelDetails);
       }
       

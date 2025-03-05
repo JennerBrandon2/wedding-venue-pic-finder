@@ -20,12 +20,20 @@ Deno.serve(async (req) => {
   try {
     // Parse request body once at the start
     const requestData = await req.json();
+    console.log('Received request data:', requestData);
+    
     const { venue_name, import_id, venue_item_id, search_type = 'venue' } = requestData;
-    const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
+    
+    // Debug log for troubleshooting
+    console.log(`Search parameters: venue_name=${venue_name}, search_type=${search_type}`);
     
     if (!venue_name) {
+      console.error('Missing venue_name in request');
       throw new Error('venue_name is required');
     }
+    
+    const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
+    console.log(`Using search suffix: ${searchSuffix}`);
     
     // Update status to processing if this is part of a batch import
     if (import_id && venue_item_id) {
@@ -34,18 +42,26 @@ Deno.serve(async (req) => {
         .update({ status: 'processing' })
         .eq('id', venue_item_id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Error updating venue item status:', updateError);
+        throw updateError;
+      }
     }
 
     // First, search for hotel details
     const hotelSearchQuery = `${venue_name} hotel details`;
+    console.log(`Searching for hotel details with query: ${hotelSearchQuery}`);
+    
     const hotelResponse = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(hotelSearchQuery)}&api_key=${apiKey}`);
     
     if (!hotelResponse.ok) {
-      throw new Error('Failed to fetch hotel details from SerpAPI');
+      const errorText = await hotelResponse.text();
+      console.error(`Hotel search API error: ${hotelResponse.status} - ${errorText}`);
+      throw new Error(`Failed to fetch hotel details from SerpAPI: ${errorText}`);
     }
 
     const hotelData = await hotelResponse.json();
+    console.log('Hotel search response received');
     
     // Extract hotel details from the search results
     const hotelDetails = {
@@ -91,6 +107,7 @@ Deno.serve(async (req) => {
     }
     
     // Create search record with hotel details
+    console.log('Creating venue search record in database');
     const { data: searchData, error: searchError } = await supabase
       .from('venue_searches')
       .insert([{ 
@@ -108,19 +125,27 @@ Deno.serve(async (req) => {
       .select()
       .single();
 
-    if (searchError) throw searchError;
+    if (searchError) {
+      console.error('Error creating search record:', searchError);
+      throw searchError;
+    }
 
     // Call SerpAPI to search for venue images with wide aspect ratio
     const searchQuery = `${venue_name} ${searchSuffix}`;
+    console.log(`Searching for images with query: ${searchQuery}`);
+    
     const response = await fetch(
       `https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(searchQuery)}&api_key=${apiKey}&num=15&params=imgar:w`
     );
     
     if (!response.ok) {
-      throw new Error('Failed to fetch images from SerpAPI');
+      const errorText = await response.text();
+      console.error(`Image search API error: ${response.status} - ${errorText}`);
+      throw new Error(`Failed to fetch images from SerpAPI: ${errorText}`);
     }
 
     const data = await response.json();
+    console.log('Image search response received');
 
     if (!data.images_results || !Array.isArray(data.images_results)) {
       console.error('No images found or invalid response format:', data);
@@ -151,6 +176,8 @@ Deno.serve(async (req) => {
       venue_name: venue_name
     }));
 
+    console.log(`Processing ${images.length} images`);
+
     // Save images with venue_name
     const { data: savedImages, error: imageError } = await supabase
       .from('venue_images')
@@ -162,7 +189,10 @@ Deno.serve(async (req) => {
       })))
       .select();
 
-    if (imageError) throw imageError;
+    if (imageError) {
+      console.error('Error saving images:', imageError);
+      throw imageError;
+    }
 
     // If this is part of a batch import, update status and process next venue
     if (import_id && venue_item_id) {
@@ -178,6 +208,7 @@ Deno.serve(async (req) => {
       await processNextVenue(import_id);
     }
 
+    console.log('Search completed successfully');
     return new Response(JSON.stringify({ 
       images: savedImages,
       hotelDetails

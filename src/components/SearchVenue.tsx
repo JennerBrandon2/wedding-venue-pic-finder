@@ -22,6 +22,8 @@ export function SearchVenue({ onSearch }: { onSearch: (query: string) => void })
       });
       return;
     }
+    
+    console.log(`Searching for: ${query.trim()} with type: ${searchType}`);
     onSearch(query.trim());
   };
 
