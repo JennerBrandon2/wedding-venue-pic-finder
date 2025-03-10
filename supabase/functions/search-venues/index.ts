@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     const { venue_name, import_id, venue_item_id, search_type = 'venue' } = requestData;
     
     // Debug log for troubleshooting
-    console.log(`Search parameters: venue_name=${venue_name}, search_type=${search_type}`);
+    console.log(`Search parameters: venue_name=${venue_name}, search_type=${search_type}, import_id=${import_id}, venue_item_id=${venue_item_id}`);
     
     if (!venue_name) {
       console.error('Missing venue_name in request');
@@ -47,22 +47,28 @@ Deno.serve(async (req) => {
       throw new Error('SERPAPI_API_KEY is missing. Please configure it in Supabase Dashboard.');
     }
     
-    const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
-    console.log(`Using search suffix: ${searchSuffix}`);
-    
     // Update status to processing if this is part of a batch import
     if (import_id && venue_item_id) {
-      const { error: updateError } = await supabase
-        .from('venue_import_items')
-        .update({ status: 'processing' })
-        .eq('id', venue_item_id);
+      try {
+        const { error: updateError } = await supabase
+          .from('venue_import_items')
+          .update({ status: 'processing' })
+          .eq('id', venue_item_id);
 
-      if (updateError) {
-        console.error('Error updating venue item status:', updateError);
-        throw updateError;
+        if (updateError) {
+          console.error('Error updating venue item status:', updateError);
+          throw updateError;
+        }
+        console.log(`Updated venue item ${venue_item_id} to processing status`);
+      } catch (updateError) {
+        console.error('Failed to update venue status to processing:', updateError);
+        // Continue with the search even if we couldn't update the status
       }
     }
 
+    const searchSuffix = search_type === 'venue' ? 'wedding venue' : 'logo';
+    console.log(`Using search suffix: ${searchSuffix}`);
+    
     // First, search for hotel details
     const hotelSearchQuery = `${venue_name} hotel details`;
     console.log(`Searching for hotel details with query: ${hotelSearchQuery}`);
@@ -73,12 +79,14 @@ Deno.serve(async (req) => {
       console.log('Hotel search response status:', hotelResponse.status);
     } catch (error) {
       console.error('Failed to fetch hotel details:', error);
+      await updateVenueStatusWithError(venue_item_id, 'Error fetching hotel details: ' + error.message);
       throw new Error(`Network error when fetching hotel details: ${error.message}`);
     }
     
     if (!hotelResponse.ok) {
       const errorText = await hotelResponse.text();
       console.error(`Hotel search API error: ${hotelResponse.status} - ${errorText}`);
+      await updateVenueStatusWithError(venue_item_id, `API error: ${hotelResponse.status} - ${errorText}`);
       throw new Error(`Failed to fetch hotel details from SerpAPI: ${errorText}`);
     }
 
@@ -88,6 +96,7 @@ Deno.serve(async (req) => {
       console.log('Hotel search response received');
     } catch (error) {
       console.error('Failed to parse hotel details response:', error);
+      await updateVenueStatusWithError(venue_item_id, 'Error parsing hotel data: ' + error.message);
       throw new Error(`Invalid hotel details response: ${error.message}`);
     }
     
@@ -157,11 +166,14 @@ Deno.serve(async (req) => {
 
       if (searchError) {
         console.error('Error creating search record:', searchError);
+        await updateVenueStatusWithError(venue_item_id, 'Error creating search record: ' + searchError.message);
         throw searchError;
       }
       searchData = data;
+      console.log(`Created search record with ID: ${searchData?.id}`);
     } catch (error) {
       console.error('Failed to create search record:', error);
+      await updateVenueStatusWithError(venue_item_id, 'Error creating search record: ' + error.message);
       // Continue with the search even if we can't save to the database
     }
 
@@ -177,12 +189,14 @@ Deno.serve(async (req) => {
       console.log('Image search response status:', response.status);
     } catch (error) {
       console.error('Failed to fetch images:', error);
+      await updateVenueStatusWithError(venue_item_id, 'Error fetching images: ' + error.message);
       throw new Error(`Network error when fetching images: ${error.message}`);
     }
     
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Image search API error: ${response.status} - ${errorText}`);
+      await updateVenueStatusWithError(venue_item_id, `Image API error: ${response.status} - ${errorText}`);
       throw new Error(`Failed to fetch images from SerpAPI: ${errorText}`);
     }
 
@@ -192,6 +206,7 @@ Deno.serve(async (req) => {
       console.log('Image search response received');
     } catch (error) {
       console.error('Failed to parse image search response:', error);
+      await updateVenueStatusWithError(venue_item_id, 'Error parsing image data: ' + error.message);
       throw new Error(`Invalid image search response: ${error.message}`);
     }
 
@@ -209,7 +224,7 @@ Deno.serve(async (req) => {
           .eq('id', venue_item_id);
 
         // Process next venue
-        await processNextVenue(import_id);
+        EdgeRuntime.waitUntil(processNextVenue(import_id));
       }
 
       return new Response(JSON.stringify({ 
@@ -245,12 +260,15 @@ Deno.serve(async (req) => {
 
       if (imageError) {
         console.error('Error saving images:', imageError);
+        await updateVenueStatusWithError(venue_item_id, 'Error saving images: ' + imageError.message);
         // Continue without throwing - we'll just return the images without saving them
       } else {
         savedImages = imgData || [];
+        console.log(`Saved ${savedImages.length} images to database`);
       }
     } catch (error) {
       console.error('Failed to save images:', error);
+      await updateVenueStatusWithError(venue_item_id, 'Error saving images: ' + error.message);
       // Continue without throwing - we'll just return the images without saving them
       savedImages = images;
     }
@@ -266,10 +284,12 @@ Deno.serve(async (req) => {
           })
           .eq('id', venue_item_id);
 
-        // Process next venue
-        await processNextVenue(import_id);
+        console.log(`Updated venue item ${venue_item_id} to completed status`);
+
+        // Process next venue as a background task
+        EdgeRuntime.waitUntil(processNextVenue(import_id));
       } catch (error) {
-        console.error('Failed to update venue item status:', error);
+        console.error('Failed to update venue item status to completed:', error);
         // Continue without throwing
       }
     }
@@ -304,10 +324,34 @@ Deno.serve(async (req) => {
   }
 });
 
+// Helper function to update venue status with an error message
+async function updateVenueStatusWithError(venue_item_id: string | undefined, error_message: string) {
+  if (venue_item_id) {
+    try {
+      const { error } = await supabase
+        .from('venue_import_items')
+        .update({ 
+          status: 'error',
+          error_message: error_message
+        })
+        .eq('id', venue_item_id);
+      
+      if (error) {
+        console.error('Failed to update venue status to error:', error);
+      } else {
+        console.log(`Updated venue item ${venue_item_id} to error status with message: ${error_message}`);
+      }
+    } catch (err) {
+      console.error('Exception when updating venue status to error:', err);
+    }
+  }
+}
+
 async function processNextVenue(importId: string) {
+  console.log(`Processing next venue for import ${importId}`);
   try {
     // Find next pending venue
-    const { data: nextVenue } = await supabase
+    const { data: nextVenue, error } = await supabase
       .from('venue_import_items')
       .select()
       .eq('import_id', importId)
@@ -316,17 +360,52 @@ async function processNextVenue(importId: string) {
       .limit(1)
       .single();
 
+    if (error) {
+      console.error('Error finding next pending venue:', error);
+      // Check if error is because there are no more pending venues
+      if (error.code === 'PGRST116') {
+        console.log('No more pending venues found, marking import as completed');
+        await supabase
+          .from('venue_csv_imports')
+          .update({ status: 'completed' })
+          .eq('id', importId);
+      }
+      return;
+    }
+
     if (nextVenue) {
+      console.log(`Found next pending venue: ${nextVenue.venue_name}`);
       // Process next venue
-      await supabase.functions.invoke('search-venues', {
-        body: { 
+      const response = await fetch(`${supabaseUrl}/functions/v1/search-venues`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`
+        },
+        body: JSON.stringify({ 
           venue_name: nextVenue.venue_name,
           import_id: importId,
-          venue_item_id: nextVenue.id
-        }
+          venue_item_id: nextVenue.id,
+          search_type: nextVenue.search_type
+        })
       });
+      
+      if (!response.ok) {
+        console.error(`Failed to trigger next venue search: ${response.status}`);
+        // Mark venue as error
+        await updateVenueStatusWithError(
+          nextVenue.id, 
+          `Failed to trigger search: ${response.status}`
+        );
+        
+        // Try to process next venue anyway
+        EdgeRuntime.waitUntil(processNextVenue(importId));
+      } else {
+        console.log(`Successfully triggered next venue search for ${nextVenue.venue_name}`);
+      }
     } else {
       // All venues processed, update import status
+      console.log('No more pending venues found, marking import as completed');
       await supabase
         .from('venue_csv_imports')
         .update({ status: 'completed' })
@@ -334,5 +413,12 @@ async function processNextVenue(importId: string) {
     }
   } catch (error) {
     console.error('Process next venue error:', error);
+    // Try again with the next venue
+    EdgeRuntime.waitUntil(processNextVenue(importId));
   }
 }
+
+// Register shutdown handler
+addEventListener('beforeunload', (ev) => {
+  console.log('Function shutdown due to:', ev.detail?.reason);
+});
