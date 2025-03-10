@@ -307,7 +307,7 @@ export function VenueImportResults() {
             onClick={handleRefresh}
             disabled={isRefreshing}
           >
-            <RefreshCw className="mr-2 h-4 w-4" className={isRefreshing ? "animate-spin" : ""} />
+            <RefreshCw className={isRefreshing ? "animate-spin mr-2 h-4 w-4" : "mr-2 h-4 w-4"} />
             {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </Button>
           <Button
