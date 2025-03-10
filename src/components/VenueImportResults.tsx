@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { FileDown } from "lucide-react";
+import { FileDown, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 interface VenueImportItem {
@@ -45,8 +45,9 @@ interface ResultRow {
 export function VenueImportResults() {
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: items, isLoading } = useQuery({
+  const { data: items, isLoading, refetch } = useQuery({
     queryKey: ['venue-imports'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -58,8 +59,29 @@ export function VenueImportResults() {
       if (error) throw error;
       return data as VenueImportItem[];
     },
-    refetchInterval: 5000,
+    // Reduced refetch interval for more responsive updates
+    refetchInterval: 3000,
   });
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+      toast({
+        title: "Refreshed",
+        description: "Latest import status updated",
+      });
+    } catch (error) {
+      console.error('Refresh error:', error);
+      toast({
+        title: "Refresh Failed",
+        description: "Couldn't update import status",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const fetchImages = async (searchIds: string[]) => {
     if (searchIds.length === 0) return [];
@@ -250,18 +272,53 @@ export function VenueImportResults() {
     );
   }
 
+  // Count statuses for summary
+  const statusCounts = items.reduce((acc, item) => {
+    acc[item.status] = (acc[item.status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div className="w-full max-w-4xl mx-auto mt-8 p-4">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-semibold">Recent Imports</h2>
-        <Button
-          variant="outline"
-          onClick={exportToCsv}
-          disabled={isExporting}
-        >
-          <FileDown className="mr-2 h-4 w-4" />
-          {isExporting ? 'Exporting...' : 'Export to CSV'}
-        </Button>
+        <div>
+          <h2 className="text-2xl font-semibold">Recent Imports</h2>
+          {Object.keys(statusCounts).length > 0 && (
+            <div className="text-sm text-muted-foreground mt-1">
+              {Object.entries(statusCounts).map(([status, count], index) => (
+                <span key={status} className={
+                  status === 'completed' ? 'text-green-600' :
+                  status === 'error' ? 'text-red-600' :
+                  status === 'processing' ? 'text-blue-600' :
+                  status === 'pending' ? 'text-amber-600' :
+                  'text-gray-600'
+                }>
+                  {count} {status}
+                  {index < Object.entries(statusCounts).length - 1 ? ', ' : ''}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" className={isRefreshing ? "animate-spin" : ""} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={exportToCsv}
+            disabled={isExporting}
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            {isExporting ? 'Exporting...' : 'Export to CSV'}
+          </Button>
+        </div>
       </div>
       <div className="border rounded-lg">
         <Table>
@@ -284,13 +341,16 @@ export function VenueImportResults() {
                     item.status === 'completed' ? 'text-green-600' :
                     item.status === 'error' ? 'text-red-600' :
                     item.status === 'processing' ? 'text-blue-600' :
+                    item.status === 'pending' ? 'text-amber-600' :
                     'text-gray-600'
                   }>
                     {item.status}
                   </span>
                 </TableCell>
                 <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
-                <TableCell>{item.error_message || '-'}</TableCell>
+                <TableCell className="max-w-[200px] truncate" title={item.error_message || ''}>
+                  {item.error_message || '-'}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -27,6 +27,8 @@ export function VenueBatchUpload() {
 
     setIsUploading(true);
     try {
+      console.log(`Uploading CSV with search type: ${searchType}`);
+      
       const formData = new FormData();
       formData.append('file', file);
       formData.append('search_type', searchType);
@@ -40,6 +42,8 @@ export function VenueBatchUpload() {
 
       if (error) throw error;
 
+      console.log('CSV upload response:', data);
+
       toast({
         title: "Upload successful",
         description: `Processing ${data.total_venues} venues. Check the results table for status.`,
@@ -48,7 +52,7 @@ export function VenueBatchUpload() {
       console.error('Upload error:', error);
       toast({
         title: "Upload failed",
-        description: error.message,
+        description: error.message || "Failed to process CSV file",
         variant: "destructive",
       });
     } finally {
@@ -73,7 +77,7 @@ export function VenueBatchUpload() {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground mt-2">
-        Upload a CSV file with venue names (one per line)
+        Upload a CSV file with venue names (one per line). This will trigger searches for each venue.
       </p>
     </div>
   );
